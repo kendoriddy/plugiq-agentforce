@@ -372,6 +372,26 @@ const pluginStore = createPluginStore({
   broker: composio?.broker,
 });
 
+/*
+ * The prototype ships one deterministic, read-only knowledge source. Seed it through the same
+ * catalogue and grant tables as every external integration so discovery, policy and audit remain
+ * real; only the source data is synthetic. Both operations are idempotent, which keeps local
+ * start-up a single command without creating a second setup path in the UI.
+ */
+if (tenantPackage.tenantId === "plugiq-agentforce") {
+  const seededBy = "agentforce-demo@local";
+  await pluginStore.addServer({
+    key: "agentforce-knowledge",
+    by: seededBy,
+  });
+  await pluginStore.grant(
+    "mcp",
+    "agentforce-knowledge/search_knowledge",
+    "knowledge",
+    seededBy,
+  );
+}
+
 /**
  * Routines, and the one moment its tools are told what to act on.
  *

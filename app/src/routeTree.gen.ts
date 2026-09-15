@@ -16,7 +16,12 @@ import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/rou
 import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboarding'
 import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settings/route'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
+import { Route as AuthedAppActivityRouteImport } from './routes/_authed/_app/activity'
 import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
+import { Route as AuthedAppDocumentsRouteImport } from './routes/_authed/_app/documents'
+import { Route as AuthedAppIntegrationsRouteImport } from './routes/_authed/_app/integrations'
+import { Route as AuthedAppMembersRouteImport } from './routes/_authed/_app/members'
+import { Route as AuthedAppModelsRouteImport } from './routes/_authed/_app/models'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
@@ -77,9 +82,34 @@ const AuthedAppIndexRoute = AuthedAppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppActivityRoute = AuthedAppActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
 const AuthedAppBotRoute = AuthedAppBotRouteImport.update({
   id: '/bot',
   path: '/bot',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppDocumentsRoute = AuthedAppDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppIntegrationsRoute = AuthedAppIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppMembersRoute = AuthedAppMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppModelsRoute = AuthedAppModelsRouteImport.update({
+  id: '/models',
+  path: '/models',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
@@ -230,7 +260,12 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/onboarding': typeof AuthedOnboardingRoute
+  '/activity': typeof AuthedAppActivityRoute
   '/bot': typeof AuthedAppBotRoute
+  '/documents': typeof AuthedAppDocumentsRoute
+  '/integrations': typeof AuthedAppIntegrationsRoute
+  '/members': typeof AuthedAppMembersRoute
+  '/models': typeof AuthedAppModelsRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -262,7 +297,12 @@ export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
   '/sign': typeof SignRoute
   '/onboarding': typeof AuthedOnboardingRoute
+  '/activity': typeof AuthedAppActivityRoute
   '/bot': typeof AuthedAppBotRoute
+  '/documents': typeof AuthedAppDocumentsRoute
+  '/integrations': typeof AuthedAppIntegrationsRoute
+  '/members': typeof AuthedAppMembersRoute
+  '/models': typeof AuthedAppModelsRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -298,7 +338,12 @@ export interface FileRoutesById {
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/_authed/_app': typeof AuthedAppRouteWithChildren
   '/_authed/onboarding': typeof AuthedOnboardingRoute
+  '/_authed/_app/activity': typeof AuthedAppActivityRoute
   '/_authed/_app/bot': typeof AuthedAppBotRoute
+  '/_authed/_app/documents': typeof AuthedAppDocumentsRoute
+  '/_authed/_app/integrations': typeof AuthedAppIntegrationsRoute
+  '/_authed/_app/members': typeof AuthedAppMembersRoute
+  '/_authed/_app/models': typeof AuthedAppModelsRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -335,7 +380,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/settings'
     | '/onboarding'
+    | '/activity'
     | '/bot'
+    | '/documents'
+    | '/integrations'
+    | '/members'
+    | '/models'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -367,7 +417,12 @@ export interface FileRouteTypes {
     | '/'
     | '/sign'
     | '/onboarding'
+    | '/activity'
     | '/bot'
+    | '/documents'
+    | '/integrations'
+    | '/members'
+    | '/models'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -402,7 +457,12 @@ export interface FileRouteTypes {
     | '/_authed/settings'
     | '/_authed/_app'
     | '/_authed/onboarding'
+    | '/_authed/_app/activity'
     | '/_authed/_app/bot'
+    | '/_authed/_app/documents'
+    | '/_authed/_app/integrations'
+    | '/_authed/_app/members'
+    | '/_authed/_app/models'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/admin/audit'
@@ -488,11 +548,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppIndexRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/activity': {
+      id: '/_authed/_app/activity'
+      path: '/activity'
+      fullPath: '/activity'
+      preLoaderRoute: typeof AuthedAppActivityRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/bot': {
       id: '/_authed/_app/bot'
       path: '/bot'
       fullPath: '/bot'
       preLoaderRoute: typeof AuthedAppBotRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/documents': {
+      id: '/_authed/_app/documents'
+      path: '/documents'
+      fullPath: '/documents'
+      preLoaderRoute: typeof AuthedAppDocumentsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/integrations': {
+      id: '/_authed/_app/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof AuthedAppIntegrationsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/members': {
+      id: '/_authed/_app/members'
+      path: '/members'
+      fullPath: '/members'
+      preLoaderRoute: typeof AuthedAppMembersRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/models': {
+      id: '/_authed/_app/models'
+      path: '/models'
+      fullPath: '/models'
+      preLoaderRoute: typeof AuthedAppModelsRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/routines': {
@@ -745,7 +840,12 @@ const AuthedSettingsRouteRouteWithChildren =
   AuthedSettingsRouteRoute._addFileChildren(AuthedSettingsRouteRouteChildren)
 
 interface AuthedAppRouteChildren {
+  AuthedAppActivityRoute: typeof AuthedAppActivityRoute
   AuthedAppBotRoute: typeof AuthedAppBotRoute
+  AuthedAppDocumentsRoute: typeof AuthedAppDocumentsRoute
+  AuthedAppIntegrationsRoute: typeof AuthedAppIntegrationsRoute
+  AuthedAppMembersRoute: typeof AuthedAppMembersRoute
+  AuthedAppModelsRoute: typeof AuthedAppModelsRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
@@ -755,7 +855,12 @@ interface AuthedAppRouteChildren {
 }
 
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
+  AuthedAppActivityRoute: AuthedAppActivityRoute,
   AuthedAppBotRoute: AuthedAppBotRoute,
+  AuthedAppDocumentsRoute: AuthedAppDocumentsRoute,
+  AuthedAppIntegrationsRoute: AuthedAppIntegrationsRoute,
+  AuthedAppMembersRoute: AuthedAppMembersRoute,
+  AuthedAppModelsRoute: AuthedAppModelsRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,

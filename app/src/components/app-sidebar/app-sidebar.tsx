@@ -1,11 +1,16 @@
 import {
+  IconActivity,
   IconBolt,
-  IconBox,
+  IconFileText,
+  IconHome,
   IconLogout,
+  IconPlugConnected,
   IconPlus,
+  IconRobot,
   IconSearch,
   IconSettings,
   IconShieldLock,
+  IconUsers,
 } from "@tabler/icons-react";
 import {
   useInfiniteQuery,
@@ -51,11 +56,9 @@ import {
   channelListQueryOptions,
 } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
-import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { relativeTime } from "@/lib/relative-time";
 import { Button } from "../ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
@@ -233,44 +236,118 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar {...props}>
-      <SidebarHeader className="h-12 p-2">
-        <SidebarMenu>
-          <SidebarMenuItem className="flex flex-row gap-1.5">
-            <SidebarMenuButton
-              className="font-semibold text-[14px] tracking-tighter h-full leading-tight"
-              render={(props) => (
-                <Link {...appLinkOptions} {...props}>
-                  {appConfig.brand.productName}
-                </Link>
-              )}
-            />
+      <SidebarHeader className="border-sidebar-border border-b px-4 py-4">
+        <Link {...appLinkOptions} className="flex items-center gap-3">
+          <img
+            alt="Descasio"
+            className="h-7 w-auto object-contain"
+            src="/descasio-logo.png"
+          />
+          <div className="border-sidebar-border border-l pl-3 leading-tight">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/55">
+              PlugiQ
+            </div>
+            <div className="text-sm font-semibold text-sidebar-foreground">
+              AgentForce
+            </div>
+          </div>
+        </Link>
+      </SidebarHeader>
+      <SidebarContent className="scroll-fade-b">
+        <SidebarGroup className="px-2 pt-3">
+          <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/45">
+            AgentForce
+          </div>
+          <SidebarMenu className="gap-1">
+            {(
+              [
+                { to: "/", label: "Home", icon: IconHome },
+                { to: "/agents", label: "Agents", icon: IconRobot },
+                { to: "/documents", label: "Documents", icon: IconFileText },
+                {
+                  to: "/integrations",
+                  label: "Integrations",
+                  icon: IconPlugConnected,
+                },
+              ] as const
+            ).map((item) => (
+              <SidebarMenuItem key={item.to}>
+                <SidebarMenuButton
+                  className="h-9 text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent text-sidebar-accent-foreground",
+                      }}
+                      to={item.to}
+                    />
+                  )}
+                >
+                  <item.icon />
+                  <span>{item.label}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+
+        <SidebarGroup className="px-2 pt-2">
+          <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/45">
+            Administration
+          </div>
+          <SidebarMenu className="gap-1">
+            {(
+              [
+                { to: "/models", label: "AI Models", icon: IconBolt },
+                { to: "/members", label: "Members", icon: IconUsers },
+                { to: "/activity", label: "Activity", icon: IconActivity },
+              ] as const
+            ).map((item) => (
+              <SidebarMenuItem key={item.to}>
+                <SidebarMenuButton
+                  className="h-9 text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent text-sidebar-accent-foreground",
+                      }}
+                      to={item.to}
+                    />
+                  )}
+                >
+                  <item.icon />
+                  <span>{item.label}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+
+        <SidebarGroup className="mt-2 gap-px border-sidebar-border border-t px-2 pt-4">
+          <div className="flex items-center justify-between px-2 pb-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/45">
+              Recent work
+            </span>
             <Button
+              className="size-7 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
               size="icon"
               variant="ghost"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/channel/new"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
+              render={(props) => <Link {...props} to="/channel/new" />}
             >
               <IconPlus />
             </Button>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-      <SidebarContent className="scroll-fade-b">
-        <SidebarMenu>
-          <SidebarGroup className="gap-px">
+          </div>
+          <SidebarMenu>
             <SidebarMenuItem>
-              <InputGroup className="bg-background text-sm rounded-lg h-9">
+              <InputGroup className="h-9 rounded-lg border-sidebar-border bg-sidebar-accent text-sm text-sidebar-foreground">
                 <InputGroupInput
                   aria-label="Search channels"
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search..."
+                  placeholder="Search conversations"
                   value={search}
                 />
                 <InputGroupAddon>
@@ -279,37 +356,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </InputGroup>
             </SidebarMenuItem>
             <div className="w-full h-2" />
-            {/*
-             * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
-             * used yet needs telling how to start. A roster that simply does not match what is in
-             * the box has to say so and quote it back — told "you don't have channels yet" while
-             * holding a typo, a person reads their conversations as gone.
-             */}
             {searching && visibleChannels.length === 0 ? (
-              <div className="py-4">
-                <Empty className="border border-dashed min-h-[40dvh]">
-                  <EmptyHeader>
-                    <EmptyTitle>No channels match your search</EmptyTitle>
-                    <EmptyDescription className="text-pretty">
-                      Nothing here is named “{search.trim()}”, and nobody has
-                      said it recently either.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </div>
+              <p className="px-2 py-3 text-xs text-sidebar-foreground/45">
+                No conversation matches “{search.trim()}”.
+              </p>
             ) : null}
             {!searching && channels.data?.length === 0 ? (
-              <div className="py-4">
-                <Empty className="border border-dashed min-h-[40dvh]">
-                  <EmptyHeader>
-                    <EmptyTitle>You don't have channels yet</EmptyTitle>
-                    <EmptyDescription className="text-pretty">
-                      Start talking to agents and your channels will appear
-                      here.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </div>
+              <p className="px-2 py-3 text-xs text-sidebar-foreground/45">
+                Your conversations will appear here.
+              </p>
             ) : null}
             <AnimatePresence initial={false}>
               {visibleChannels.map((channel) => (
@@ -320,63 +375,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 />
               ))}
             </AnimatePresence>
-          </SidebarGroup>
-        </SidebarMenu>
+          </SidebarMenu>
+        </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-sidebar-border border-t p-2">
         <SidebarMenu className="gap-px">
-          <SidebarMenuItem>
-            {/* Beside Agents rather than inside Admin: writing a skill is something anybody does. */}
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/skills"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconBox />
-              </div>
-              <span className="text-sm trackint-tight">Skills</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/agents"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconBolt />
-              </div>
-              <span className="text-sm trackint-tight">Agents</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          {/* Routines live on each coworker's own dialog now, not as a nav destination: the
-              question "what does this Bot do on a schedule" is asked while looking at the Bot.
-              The /routines route still answers a direct link. */}
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <SidebarMenuButton className="hover:bg-foreground/5 h-10" />
+                  <SidebarMenuButton className="h-12 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground" />
                 }
               >
                 <UserAvatar />
-                <span className="text-sm trackint-tight">
-                  {currentUser?.name || currentUser?.email}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {currentUser?.name || currentUser?.email}
+                  </span>
+                  <span className="block text-[11px] capitalize text-sidebar-foreground/50">
+                    {currentUser?.role ?? "Administrator"}
+                  </span>
                 </span>
               </DropdownMenuTrigger>
               <DropdownMenuContent

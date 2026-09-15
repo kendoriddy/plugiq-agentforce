@@ -278,6 +278,18 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     docsUrl: "https://developers.notion.com/guides/mcp/build-mcp-client",
   },
   {
+    key: "agentforce-knowledge",
+    title: "AgentForce Knowledge",
+    vendor: "Descasio",
+    summary: "Synthetic Descasio documents prepared for this prototype.",
+    host: "builtin://agentforce-knowledge",
+    path: "/",
+    transport: "builtin-demo-knowledge",
+    auth: Object.freeze({ kind: "builtin" }),
+    writeTools: Object.freeze([]),
+    docsUrl: "https://descasio.io/",
+  },
+  {
     key: "routines",
     title: "Routines",
     vendor: "OpenBot",

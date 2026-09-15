@@ -1,3 +1,4 @@
+import * as builtinDemoKnowledge from "./builtin-demo-knowledge";
 import * as builtinRoutines from "./builtin-routines";
 import * as composio from "./composio";
 import * as driveRest from "./google-drive-rest";
@@ -118,6 +119,7 @@ export type VendorTransport = {
 export type TransportKind =
   | "mcp"
   | "google-drive-rest"
+  | "builtin-demo-knowledge"
   | "builtin-routines"
   | "composio";
 
@@ -143,6 +145,7 @@ export type CuratedTransportKind = Exclude<TransportKind, "composio">;
 const TRANSPORTS: Record<TransportKind, VendorTransport> = {
   mcp,
   "google-drive-rest": driveRest,
+  "builtin-demo-knowledge": builtinDemoKnowledge,
   "builtin-routines": builtinRoutines,
   composio,
 };

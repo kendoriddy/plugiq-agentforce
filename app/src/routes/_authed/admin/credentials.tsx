@@ -94,8 +94,8 @@ function CredentialsPage() {
           Add credential
         </Button>
       }
-      description="Credentials are write-only. OpenBot never displays their secret values."
-      title="Credentials"
+      description="Credentials are write-only. AgentForce never displays their secret values."
+      title="AI model credentials"
     >
       {/*
        * THE FORM IS NOT ON THE PAGE. A credential is added once and then lived with, so a permanent
