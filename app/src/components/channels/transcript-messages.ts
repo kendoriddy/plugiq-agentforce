@@ -36,15 +36,27 @@ export function seedMessage(text: string, id: string): Message {
  * Deliberately not persisted. A reload finds nothing here, which is correct, by then the message
  * is in the thread and arrives through the normal replay.
  */
-const firstMessages = new Map<string, string>();
+const firstMessages = new Map<
+  string,
+  { text: string; documentIds: string[] }
+>();
 
-export function stashFirstMessage(channelId: string, text: string): void {
-  firstMessages.set(channelId, text);
+export function stashFirstMessage(
+  channelId: string,
+  text: string,
+  documentIds: readonly string[] = [],
+): void {
+  firstMessages.set(channelId, {
+    text,
+    documentIds: [...documentIds],
+  });
 }
 
 /** Read the pending first message and forget it. Null for a channel opened any other way. */
-export function takeFirstMessage(channelId: string): string | null {
-  const text = firstMessages.get(channelId) ?? null;
+export function takeFirstMessage(
+  channelId: string,
+): { text: string; documentIds: string[] } | null {
+  const pending = firstMessages.get(channelId) ?? null;
   firstMessages.delete(channelId);
-  return text;
+  return pending;
 }

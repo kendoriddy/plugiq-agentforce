@@ -1,3 +1,5 @@
+# The PlugiQ AgentForce deployment package. Every Bot here is reachable the moment the deployment
+# starts, so the surface never lists an agent that is unavailable by default.
 agents:
   - id: general-assistant
     name: General Assistant
@@ -8,9 +10,12 @@ agents:
     system_prompt: >-
       You are AgentForce, Descasio's helpful general assistant. Give clear, concise, accurate
       answers and be explicit when a requested company source or integration is unavailable.
+      When someone asks to implement, code, or open a pull request for a Linear ticket, use the
+      Product Engineer tools. Do not claim you edited a repository yourself.
     skills:
       - bot-creator
       - skill-creator
+      - implement-a-ticket
   - id: knowledge
     name: Knowledge Agent
     title: Descasio knowledge
@@ -18,14 +23,17 @@ agents:
     avatar_seed: knowledge
     type: built-in
     system_prompt: >-
-      Answer only from sources reached through your granted tools. Cite the document title and link
-      used. These are synthetic demo documents, so describe them as demo knowledge when relevant.
-      If no source is connected or a tool fails, say so plainly instead of answering from memory.
+      Answer from sources reached through your granted tools, and from any company documents the
+      person attached to this turn with #. Cite the document title and link used. These may be
+      demo knowledge documents, so describe them that way when relevant. If no source is connected,
+      nothing is attached, or a tool fails, say so plainly instead of answering from memory.
+      You may also start or check a Product Engineer run when the person asks to implement a Linear ticket.
     skills:
       - find-a-document
       - check-a-claim
       - whats-changed
       - who-owns-this
+      - implement-a-ticket
   - id: developer
     name: Developer Agent
     title: GitHub and engineering
@@ -34,5 +42,27 @@ agents:
     type: built-in
     system_prompt: >-
       You are Descasio's Developer Agent. Use granted GitHub tools for repository facts, issue
-      status, assignees, and pull requests. Never imply you can write, merge, or close work when only
-      read access is granted. Cite repository names and issue or pull request numbers in summaries.
+      status, assignees, and pull requests. When the person asks to implement a Linear ticket,
+      start a Product Engineer run rather than claiming you edited the repo yourself. Never imply
+      you can merge a pull request. Cite ticket ids and pull request URLs the tools return.
+    skills:
+      - implement-a-ticket
+
+  # The Bot somebody picked in setup, kept exactly as the template ships it.
+  #
+  # ONE ROW, AND IT EXISTS ONLY ONCE SOMETHING IS PICKED. A Bot whose endpoint interpolates to
+  # nothing is dropped by the loader, so this row removes itself until the shell writes an address —
+  # which is why it is invisible in the AgentForce demo and still safe to keep. Removing it instead
+  # takes the deployment's only remote-Bot registration path with it.
+  #
+  # The KIND is interpolated too: written as a literal kind, a server that predates that kind
+  # refuses the row, and refusing one Bot means refusing the file, so the deployment would not start.
+  - id: picked-harness
+    name: ${PICKED_HARNESS_NAME:-Your Bot}
+    title: ${PICKED_HARNESS_NAME:-Your Bot}
+    role_description: Answer questions and do work, using the tools it has been granted.
+    avatar_seed: picked-harness
+    type: ${PICKED_HARNESS_KIND:-remote-ag-ui}
+    endpoint: ${PICKED_HARNESS_URL:-}
+    # Which agent on that server, for a Mastra roster. Blank means the only one there.
+    remote_agent_id: ${PICKED_HARNESS_AGENT_ID:-}

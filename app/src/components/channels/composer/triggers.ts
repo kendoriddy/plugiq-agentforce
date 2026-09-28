@@ -1,6 +1,11 @@
 import type { TriggerConfig, TriggerSuggestion } from "prompt-area/helpers";
 import { commandTrigger, mentionTrigger } from "prompt-area/helpers";
-import { AGENT_TRIGGER, COMMAND_TRIGGER, type CommandOption } from "./draft";
+import {
+  AGENT_TRIGGER,
+  COMMAND_TRIGGER,
+  DOCUMENT_TRIGGER,
+  type CommandOption,
+} from "./draft";
 
 /**
  * The composer's trigger registry.
@@ -10,6 +15,12 @@ import { AGENT_TRIGGER, COMMAND_TRIGGER, type CommandOption } from "./draft";
  */
 
 export type AgentOption = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
+export type DocumentOption = {
   id: string;
   name: string;
   description?: string;
@@ -36,6 +47,19 @@ export function toAgentOptions(
       name: profile.name,
       description: profile.title,
     }));
+}
+
+export function toDocumentOptions(
+  documents:
+    | readonly { id: string; title: string; category?: string }[]
+    | undefined,
+): DocumentOption[] {
+  if (!documents) return [];
+  return documents.map((document) => ({
+    id: document.id,
+    name: document.title,
+    description: document.category,
+  }));
 }
 
 function matches(query: string, ...fields: (string | undefined)[]): boolean {
@@ -70,6 +94,31 @@ export function agentTrigger(agents: readonly AgentOption[]): TriggerConfig {
 }
 
 /**
+ * `#` attaches a company knowledge document to this message.
+ */
+export function documentTrigger(
+  documents: readonly DocumentOption[],
+): TriggerConfig {
+  return mentionTrigger({
+    char: DOCUMENT_TRIGGER,
+    accessibilityLabel: "document",
+    reopenOnChipClick: true,
+    emptyMessage: "No documents yet",
+    onSearch: (query): TriggerSuggestion[] =>
+      documents
+        .filter((document) =>
+          matches(query, document.name, document.description),
+        )
+        .map((document) => ({
+          value: document.id,
+          label: document.name,
+          description: document.description,
+        })),
+    onSelect: (suggestion) => suggestion.label,
+  });
+}
+
+/**
  * `/` is restricted to the start of a line, so a URL or a date in the middle of a sentence never
  * opens the dropdown. Selection resolves to a chip; `applyCommandChips` then rewrites the ones that
  * are really prompts or client actions.
@@ -97,9 +146,15 @@ export function slashCommandTrigger(
 export function buildTriggers({
   agents,
   commands,
+  documents = [],
 }: {
   agents: readonly AgentOption[];
   commands: readonly CommandOption[];
+  documents?: readonly DocumentOption[];
 }): TriggerConfig[] {
-  return [agentTrigger(agents), slashCommandTrigger(commands)];
+  return [
+    agentTrigger(agents),
+    slashCommandTrigger(commands),
+    documentTrigger(documents),
+  ];
 }

@@ -78,7 +78,11 @@ export function createHandoffDesk(options: {
   queue: WorkQueue;
   profiles: AgentProfileStore;
   /** Whether the asking Bot has been granted the Bot it is addressing. Read per hop, never cached. */
-  mayAddress: (fromBotId: string, toBotId: string) => Promise<boolean>;
+  mayAddress: (
+    fromBotId: string,
+    toBotId: string,
+    threadId?: string,
+  ) => Promise<boolean>;
   /**
    * Who the person is, as the roster is decided for them. Null when that cannot be established.
    *
@@ -265,7 +269,7 @@ export function createHandoffDesk(options: {
 
       // Read per hop and never held, so revoking a grant applies to the next hop rather than after a
       // restart.
-      if (!(await mayAddress(from.botId, found.id))) {
+      if (!(await mayAddress(from.botId, found.id, from.threadId))) {
         return refuse(
           from,
           target,

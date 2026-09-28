@@ -1,38 +1,21 @@
 import type { McpCallResult, McpTool } from "./mcp";
+import type { KnowledgeDocumentStore } from "../documents/store";
 
-type DemoDocument = {
-  title: string;
-  url: string;
-  keywords: string[];
-  body: string;
-};
+/**
+ * Knowledge Agent's search tool. Reads Postgres via {@link useKnowledgeDocuments};
+ * until that is wired, every call refuses rather than inventing demo text.
+ */
+let documentStore: KnowledgeDocumentStore | null = null;
 
-const DOCUMENTS: readonly DemoDocument[] = Object.freeze([
-  {
-    title: "Employee Handbook — Annual Leave",
-    url: "https://demo.agentforce.local/knowledge/employee-handbook",
-    keywords: ["annual", "leave", "holiday", "days", "handbook"],
-    body: "Full-time employees receive 20 working days of annual leave each calendar year. Leave should be requested at least five working days in advance and approved by the employee's manager. Up to five unused days may be carried into the next calendar year and must be used by March 31.",
-  },
-  {
-    title: "Engineering Guidelines",
-    url: "https://demo.agentforce.local/knowledge/engineering-guidelines",
-    keywords: ["engineering", "code", "review", "pull request", "security"],
-    body: "All production changes require one peer review. Pull requests must explain customer impact, include test evidence, and link the relevant issue. Security-sensitive changes require a second reviewer from the platform team.",
-  },
-  {
-    title: "Product Overview — Plug 2.0",
-    url: "https://demo.agentforce.local/knowledge/product-overview",
-    keywords: ["plug", "product", "workflow", "process", "automation"],
-    body: "Plug 2.0 is Descasio's workflow automation platform for digitizing approvals, requisitions, and operational processes. Current priorities are the Process Builder experience, reusable workflow templates, and clearer audit history.",
-  },
-]);
+export function useKnowledgeDocuments(store: KnowledgeDocumentStore | null): void {
+  documentStore = store;
+}
 
 const TOOLS: readonly McpTool[] = Object.freeze([
   {
     name: "search_knowledge",
     description:
-      "Search the approved synthetic Descasio demo documents. Use this for company policy, engineering practice, and Plug 2.0 questions. Cite the returned title and URL in the answer.",
+      "Search approved company knowledge documents. Use this for company policy, engineering practice, and product questions. Cite the returned title in the answer.",
     inputSchema: {
       type: "object",
       properties: {
@@ -59,7 +42,15 @@ export async function callTool(
 ): Promise<McpCallResult> {
   if (toolName !== "search_knowledge") {
     return {
-      text: `${toolName} is not available in AgentForce demo knowledge.`,
+      text: `${toolName} is not available in AgentForce knowledge.`,
+      isError: true,
+      truncated: false,
+    };
+  }
+
+  if (!documentStore) {
+    return {
+      text: "Company knowledge is not available on this deployment.",
       isError: true,
       truncated: false,
     };
@@ -75,17 +66,19 @@ export async function callTool(
     };
   }
 
-  const words = query.split(/\s+/).filter((word) => word.length > 2);
-  const matches = DOCUMENTS.filter((document) => {
-    const haystack =
-      `${document.title} ${document.keywords.join(" ")} ${document.body}`.toLowerCase();
-    return words.some((word) => haystack.includes(word));
-  });
-  const selected = matches.length > 0 ? matches : DOCUMENTS;
+  const selected = await documentStore.search(query);
+  if (selected.length === 0) {
+    return {
+      text: "No company documents matched that search.",
+      isError: false,
+      truncated: false,
+    };
+  }
+
   const text = selected
     .map(
       (document) =>
-        `## ${document.title}\n\n${document.body}\n\n[Source: ${document.title}](${document.url})`,
+        `## ${document.title}\n\nCategory: ${document.category}\n\n${document.body}\n\n[Source: ${document.title}](/documents/${document.id})`,
     )
     .join("\n\n---\n\n");
 

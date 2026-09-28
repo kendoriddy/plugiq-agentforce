@@ -7,12 +7,13 @@ import {
 } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import { hasUnseenActivity } from "@/components/app-sidebar/app-sidebar";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
+import { ChannelMembers } from "@/components/channels/room-controls";
 import { ActivityLog } from "@/components/computer/activity-log";
 import { ComputerView } from "@/components/computer/computer-view";
 import { useNeedsYou } from "@/components/computer/needs-you";
@@ -84,8 +85,10 @@ function RouteComponent() {
   const isSettingsOpen = settings === true;
   const prefersReducedMotion = useReducedMotion();
   const isWatching = watch === true;
-  /** Channel routing currently supports one coworker. */
-  const agentId = channel.data?.agentIds[0];
+  const members = channel.data?.agentIds ?? [];
+  const [focusedId, setFocusedId] = useState<string | undefined>(undefined);
+  /** The member the screen and the profile follow. Not the only coworker in the room. */
+  const agentId = members.includes(focusedId ?? "") ? focusedId : members[0];
   /** Only polled while the screen is closed; the screen panel polls control itself. */
   const needsYou = useNeedsYou(agentId, !isWatching);
 
@@ -175,9 +178,9 @@ function RouteComponent() {
       }
     >
       <div className="flex flex-col">
-        <div className="h-12 border-b border-border sticky top-0 flex flex-row items-center justify-between px-3 gap-2">
+        <div className="min-h-12 border-b border-border sticky top-0 flex flex-row items-center justify-between px-3 gap-2 py-1.5">
           {/* Keyed on the displayed name so cold channel loads animate the resolved name, not the id. */}
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <SidebarToggle />
             <motion.div
               animate={{ opacity: 1 }}
@@ -214,6 +217,13 @@ function RouteComponent() {
             >
               {channel.data?.name ?? "Channel"}
             </motion.span>
+            {channel.data ? (
+              <ChannelMembers
+                channel={channel.data}
+                focusedId={agentId}
+                onFocus={setFocusedId}
+              />
+            ) : null}
           </div>
           <div className="flex flex-row gap-1.5">
             <Button
@@ -259,8 +269,8 @@ function RouteComponent() {
 }
 
 /**
- * A channel holds exactly one coworker. More than one is not supported yet, and rendering a shared
- * transcript for several agents before the runtime can route between them would look like it works.
+ * One conversation. A single coworker keeps the chat it always had. Several share the transcript:
+ * each turn goes to the member it names, or to whichever of them the message is for.
  */
 function ChannelBody({
   channel,
@@ -281,12 +291,11 @@ function ChannelBody({
     );
   }
 
-  const runtimeAgentId =
-    channel.agentIds.length === 1 ? channel.agentIds[0] : undefined;
+  const runtimeAgentId = channel.agentIds[0];
   if (!runtimeAgentId) {
     return (
       <p className="p-8 text-sm text-muted-foreground">
-        This channel has more than one coworker, which is not supported yet.
+        This channel has no coworkers.
       </p>
     );
   }

@@ -1,20 +1,24 @@
 import {
   IconArrowUpRight,
   IconBook2,
-  IconBrandGithub,
+  IconCode,
   IconSparkles,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Composer, toAgentOptions } from "@/components/channels/composer";
+import { AgentCard } from "@/components/agents/agent-card";
+import { Composer, toAgentOptions, toDocumentOptions } from "@/components/channels/composer";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 import { defaultAgentProfile } from "@/lib/agents/default-agent";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { agentListQueryOptions, isSharedWithYou } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { routeMessage } from "@/lib/channels/route";
 import { useStartChannel } from "@/lib/channels/start";
+import { documentsQueryOptions } from "@/lib/documents/queries";
 
 export const Route = createFileRoute("/_authed/_app/")({
   component: AgentForceHome,
@@ -29,9 +33,9 @@ const SUGGESTIONS = [
   },
   {
     agentId: "developer",
-    icon: IconBrandGithub,
-    label: "Summarize my open GitHub issues",
-    eyebrow: "Engineering",
+    icon: IconCode,
+    label: "Implement Linear ticket ORC-424",
+    eyebrow: "Product Engineer",
   },
   {
     agentId: "general-assistant",
@@ -44,7 +48,12 @@ const SUGGESTIONS = [
 const FEATURED_AGENT_IDS = ["general-assistant", "knowledge", "developer"];
 
 function AgentForceHome() {
-  const { data: agents, isError } = useQuery(agentListQueryOptions());
+  const {
+    data: agents,
+    isPending: loading,
+    isError: failed,
+  } = useQuery(agentListQueryOptions());
+  const { data: knowledgeDocuments } = useQuery(documentsQueryOptions());
   const { data: currentUser } = useQuery(currentUserQueryOptions());
   const { start, startChosen, pending } = useStartChannel();
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +63,7 @@ function AgentForceHome() {
   );
   const featured =
     agents?.filter((agent) => FEATURED_AGENT_IDS.includes(agent.id)) ?? [];
+  const explore = agents?.filter(isSharedWithYou);
   const firstName =
     currentUser?.name?.trim().split(/\s+/)[0] ??
     currentUser?.email?.split("@")[0] ??
@@ -98,13 +108,18 @@ function AgentForceHome() {
               <div className="mt-8 rounded-2xl border border-white/15 bg-white p-2 text-foreground shadow-2xl shadow-black/10">
                 <Composer
                   agents={toAgentOptions(agents)}
+                  documents={toDocumentOptions(knowledgeDocuments)}
                   className="w-full"
                   disabled={!fallback}
                   onSubmit={async (draft) => {
                     setError(null);
                     try {
                       if (draft.agentId) {
-                        await startChosen(draft.agentId, draft.text);
+                        await startChosen(
+                          draft.agentId,
+                          draft.text,
+                          draft.documentIds,
+                        );
                         return;
                       }
                       let agentId: string | undefined;
@@ -113,7 +128,9 @@ function AgentForceHome() {
                       } catch {
                         agentId = fallback?.id;
                       }
-                      if (agentId) await start(agentId, draft.text);
+                      if (agentId) {
+                        await start(agentId, draft.text, draft.documentIds);
+                      }
                     } catch (caught) {
                       setError(
                         caught instanceof Error
@@ -126,15 +143,25 @@ function AgentForceHome() {
                   pending={pending}
                 />
               </div>
-              {error || (isError && !agents) ? (
-                <p className="mt-3 text-sm text-red-200" role="alert">
-                  {error ?? "Your agents could not be loaded."}
-                </p>
-              ) : (
+              {fallback ? (
                 <p className="mt-3 text-xs text-white/45">
-                  Type @ to choose an agent, or let AgentForce route the task.
+                  Sent to the coworker it is for. Type <code>@</code> to choose
+                  one yourself, or <code>#</code> to attach a document.
                 </p>
-              )}
+              ) : null}
+              {error ? (
+                <p className="mt-3 text-sm text-red-200" role="alert">
+                  {error}
+                </p>
+              ) : failed && agents === undefined ? (
+                // `agents === undefined` is the only condition that means the query has never
+                // once returned, so this can never claim a failure while a retained roster is
+                // still driving an enabled composer beside it.
+                <p className="mt-3 text-sm text-red-200" role="alert">
+                  Your coworkers couldn't be loaded, so there's no one to send
+                  this to yet.
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -215,6 +242,61 @@ function AgentForceHome() {
                 </div>
               ) : null}
             </div>
+          </section>
+
+          {/*
+           * Agents somebody else shared, kept separate from the three above because these are a
+           * fact about this workspace rather than part of the demo script. Each arm reserves the
+           * same height so the page does not move when the query settles or fails.
+           */}
+          <section className="mt-10">
+            {loading ? (
+              <>
+                <h2 className="font-bold text-lg">Explore agents</h2>
+                <Skeleton className="mt-4 h-[180px]" />
+              </>
+            ) : explore?.length ? (
+              // Wins over `failed`: a failed background refetch keeps the cached roster, and a
+              // stale list here beats an error card claiming there is nothing to explore.
+              <>
+                <h2 className="font-bold text-lg">Explore agents</h2>
+                <div className="mt-4 flex flex-row flex-wrap gap-4">
+                  {explore.map((agent) => (
+                    <Link
+                      key={agent.id}
+                      search={{ agent: agent.id }}
+                      to="/channel/new"
+                    >
+                      <AgentCard agent={agent} />
+                    </Link>
+                  ))}
+                </div>
+              </>
+            ) : failed && agents === undefined ? (
+              <>
+                <h2 className="font-bold text-lg">Explore agents</h2>
+                <Empty className="mt-4 h-[180px] border border-dashed border-destructive">
+                  <EmptyHeader>
+                    <EmptyTitle className="text-destructive">
+                      Agents shared with you couldn't be loaded.
+                    </EmptyTitle>
+                  </EmptyHeader>
+                </Empty>
+              </>
+            ) : (
+              // Reached when the slice loaded and is genuinely empty, including after a failed
+              // refetch that left `agents` defined. An empty roster is a fact, not an error.
+              <>
+                <h2 className="font-bold text-lg">Explore agents</h2>
+                <Empty className="mt-4 h-[180px] border border-dashed">
+                  <EmptyHeader>
+                    <EmptyTitle className="text-muted-foreground">
+                      Nobody has shared an agent with you yet.
+                    </EmptyTitle>
+                  </EmptyHeader>
+                </Empty>
+              </>
+            )}
           </section>
         </div>
       </div>

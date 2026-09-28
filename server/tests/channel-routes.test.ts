@@ -150,11 +150,22 @@ describe("channel input parser", () => {
       parseChannelInput({
         agentIds: [" agent-2 ", "agent-1"],
         id: "forged-channel",
-        name: "forged name",
         threadId: "forged-thread",
         active: false,
       }),
     ).toEqual({ ok: true, value: { agentIds: ["agent-1", "agent-2"] } });
+  });
+
+  test("keeps a name the person chose", () => {
+    expect(
+      parseChannelInput({
+        agentIds: ["agent-1"],
+        name: " Launch review ",
+      }),
+    ).toEqual({
+      ok: true,
+      value: { agentIds: ["agent-1"], name: "Launch review" },
+    });
   });
 });
 

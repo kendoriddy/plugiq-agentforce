@@ -311,6 +311,25 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     ]),
     docsUrl: "https://github.com/CopilotKit/OpenBot/blob/main/docs/routines.md",
   },
+  {
+    key: "product-engineer",
+    title: "Product Engineer",
+    vendor: "Descasio",
+    summary:
+      "Draft a plan from a Linear ticket for human approval, then start Cursor cloud coding, resume, or certify.",
+    host: "builtin://product-engineer",
+    path: "/",
+    transport: "builtin-product-engineer",
+    auth: Object.freeze({ kind: "builtin" }),
+    writeTools: Object.freeze([
+      "start_product_engineer_run",
+      "approve_product_engineer_plan",
+      "reject_product_engineer_plan",
+      "resume_product_engineer_run",
+      "approve_product_engineer_run",
+    ]),
+    docsUrl: "https://cursor.com/docs/sdk/typescript",
+  },
 ]);
 
 const BY_KEY = new Map(CATALOGUE.map((entry) => [entry.key, entry]));

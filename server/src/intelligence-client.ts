@@ -1,5 +1,6 @@
 import { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
 import type { IntelligenceSettings } from "./config";
+import { learningContainerIdForRun } from "./learning-container";
 
 /**
  * A client through which this deployment can ask Intelligence a question of its own.
@@ -22,5 +23,6 @@ export function createIntelligenceClient(
     apiUrl: settings.apiUrl,
     wsUrl: settings.gatewayWsUrl,
     apiKey: settings.apiKey,
+    getLearningContainerId: learningContainerIdForRun,
   });
 }

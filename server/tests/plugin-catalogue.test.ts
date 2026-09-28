@@ -295,6 +295,26 @@ describe("Routines", () => {
   });
 });
 
+describe("Product Engineer", () => {
+  const entry = catalogueEntry("product-engineer");
+
+  test("is a builtin the chat tools can reach", () => {
+    expect(entry?.transport).toBe("builtin-product-engineer");
+    expect(resolveServerUrl("product-engineer")?.url).toBe(
+      "builtin://product-engineer",
+    );
+    expect(entry?.writeTools).toEqual([
+      "start_product_engineer_run",
+      "resume_product_engineer_run",
+      "approve_product_engineer_run",
+    ]);
+    expect(classifyTool(entry, "get_product_engineer_run", true)).toBe("read");
+    expect(classifyTool(entry, "start_product_engineer_run", true)).toBe(
+      "write",
+    );
+  });
+});
+
 describe("what a tool does", () => {
   const drive = catalogueEntry("google-drive")!;
 

@@ -1,0 +1,1 @@
+ALTER TABLE "product_engineer_runs" ADD COLUMN "progress" text;

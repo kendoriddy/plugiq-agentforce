@@ -8,8 +8,9 @@ import {
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { knowledgeDocumentsSystemContent } from "../../../../shared/knowledge-documents";
 import { attachmentModality } from "@/components/channels/chat-messages";
-import { toAgentOptions } from "@/components/channels/composer";
+import { toAgentOptions, toDocumentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
 import {
   seedMessage,
@@ -27,12 +28,15 @@ import {
   type ChannelSummary,
   channelKeys,
 } from "@/lib/channels/queries";
+import { roomTurnAgent } from "@/lib/channels/room-turn";
+import { routeMessage } from "@/lib/channels/route";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { afterMs, joinWithin } from "@/lib/copilot/join-thread";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import { stoppedReason } from "@/lib/copilot/stopped-turn";
 import { readThreadMessages } from "@/lib/copilot/thread-messages";
+import { documentsQueryOptions } from "@/lib/documents/queries";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import { queryClient } from "@/query-client";
 import { newId } from "../../lib/new-id";
@@ -236,10 +240,19 @@ export function ChannelChat({
   const { copilotkit } = useCopilotKit();
   // Mentions are scoped to the channel's permitted agents.
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
+  const { data: knowledgeDocuments } = useQuery(documentsQueryOptions());
   const channelAgentId = `channel:${channel.id}`;
+  /*
+   * Which coworker this turn runs as. A one-agent chat never moves off the one it was given.
+   * A room moves before the send, so the runtime agent for that turn is the member it was for.
+   */
+  const [activeAgentId, setActiveAgentId] = useState(runtimeAgentId);
+  const [awaitingAgent, setAwaitingAgent] = useState(false);
+  /** Set when the join for `activeAgentId` has finished, so a queued turn can run on that member. */
+  const [boundAgentId, setBoundAgentId] = useState<string | null>(null);
   const { agent, isReady } = useAgent({
     agentId: channelAgentId,
-    runtimeAgentId,
+    runtimeAgentId: activeAgentId,
     threadId: channel.threadId,
     updates: [
       UseAgentUpdate.OnMessagesChanged,
@@ -251,10 +264,16 @@ export function ChannelChat({
    * First-message seed from the compose screen. It is taken once per mount and retained until the
    * agent has its own messages because joining a fresh thread can temporarily empty the agent.
    */
-  const [seed] = useState<Message | null>(() => {
+  const [seedBundle] = useState(() => {
     const pending = takeFirstMessage(channel.id);
-    return pending ? seedMessage(pending, newId()) : null;
+    if (!pending) return null;
+    return {
+      message: seedMessage(pending.text, newId()),
+      documentIds: pending.documentIds,
+    };
   });
+  const seed = seedBundle?.message ?? null;
+  const seedDocumentIds = seedBundle?.documentIds ?? [];
 
   /** Cleared by the send-on-mount effect without restarting it. */
   const seedRef = useRef(seed);
@@ -340,7 +359,7 @@ export function ChannelChat({
       try {
         const stored = await readThreadMessages(
           channel.threadId,
-          runtimeAgentId,
+          activeAgentId,
         );
         const isCurrent = current && version === historyReadVersion.current;
         if (isCurrent) {
@@ -363,17 +382,20 @@ export function ChannelChat({
         }
       } finally {
         // Cleared on failure too: placeholders over an empty transcript promise messages that are
-        // never coming.
-        if (current) setRestoring(false);
-        // Release even on join/restore failure; the gate orders messages, not withholds them.
-        openJoinGate.current();
+        // never coming. A superseded join — the room moved to another member — must not open the
+        // gate that join now owns, or the next turn would run before that member's thread is joined.
+        if (current) {
+          setRestoring(false);
+          setBoundAgentId(activeAgentId);
+          openJoinGate.current();
+        }
       }
     })();
 
     return () => {
       current = false;
     };
-  }, [copilotkit, agent, isReady, channel.threadId, runtimeAgentId]);
+  }, [copilotkit, agent, isReady, channel.threadId, activeAgentId]);
 
   /*
    * A turn nobody here streamed, surfaced while the channel is open.
@@ -433,7 +455,7 @@ export function ChannelChat({
           if (!isCurrent()) return;
           const stored = await readThreadMessages(
             channel.threadId,
-            runtimeAgentId,
+            activeAgentId,
           );
           if (!isCurrent()) return;
           if (stored.availability === "unavailable") {
@@ -484,12 +506,12 @@ export function ChannelChat({
       cancelled = true;
       unsubscribe();
     };
-  }, [channel.id, channel.threadId, joinGatePromise, runtimeAgentId]);
+  }, [channel.id, channel.threadId, joinGatePromise, activeAgentId]);
 
   // Tool calls from this conversation act on this coworker's own computer.
-  useActiveBot(runtimeAgentId);
+  useActiveBot(activeAgentId);
 
-  const skillCommands = useSkillCommands(runtimeAgentId);
+  const skillCommands = useSkillCommands(activeAgentId);
   const historyNotice = channelHistoryNotice({
     restoring,
     messageCount: agent.messages.length,
@@ -594,6 +616,7 @@ export function ChannelChat({
     trimmed: string,
     skillInstructions: string[],
     attachments: Attachment[],
+    documentIds: readonly string[] = [],
   ) => {
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
@@ -641,6 +664,15 @@ export function ChannelChat({
     for (const instruction of skillInstructions) {
       target.addMessage({
         content: instruction,
+        id: newId(),
+        role: "system",
+      });
+    }
+
+    const knowledgeMarker = knowledgeDocumentsSystemContent(documentIds);
+    if (knowledgeMarker) {
+      target.addMessage({
+        content: knowledgeMarker,
         id: newId(),
         role: "system",
       });
@@ -703,12 +735,13 @@ export function ChannelChat({
     text: string,
     skillInstructions: string[] = [],
     attachments: Attachment[] = [],
+    documentIds: readonly string[] = [],
   ) => {
     const trimmed = text.trim();
     // A pasted screenshot with no caption is still a message to send: `canSendDraft` already
     // unlocks the button for exactly this case, so refusing it here would leave the button
     // enabled and inert.
-    if (!trimmed && attachments.length === 0) return;
+    if (!trimmed && attachments.length === 0 && documentIds.length === 0) return;
 
     turnsRef.current += 1;
     setTurnsInFlight(turnsRef.current);
@@ -716,7 +749,7 @@ export function ChannelChat({
       void setChannelBusy({ channelId: channel.id, busy: true });
     }
     try {
-      await deliver(trimmed, skillInstructions, attachments);
+      await deliver(trimmed, skillInstructions, attachments, documentIds);
     } finally {
       turnsRef.current -= 1;
       setTurnsInFlight(turnsRef.current);
@@ -755,15 +788,44 @@ export function ChannelChat({
               !assistantMessagesBeforeRun.current.has(message.id),
           );
         const content = typeof reply?.content === "string" ? reply.content : "";
-        if (content) reportRef.current(content, runtimeAgentId);
+        if (content) reportRef.current(content, activeAgentId);
       },
     });
     return () => subscription?.unsubscribe();
-  }, [agent, runtimeAgentId]);
+  }, [agent, activeAgentId]);
 
   /** Stable reference for effects and component callbacks. */
   const sayRef = useRef(say);
   sayRef.current = say;
+
+  const pendingDelivery = useRef<{
+    text: string;
+    skillInstructions: string[];
+    attachments: Attachment[];
+    documentIds: string[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!channel.agentIds.includes(activeAgentId)) {
+      const next = channel.agentIds[0];
+      if (next) setActiveAgentId(next);
+    }
+  }, [activeAgentId, channel.agentIds]);
+
+  useEffect(() => {
+    const pending = pendingDelivery.current;
+    if (!pending || boundAgentId !== activeAgentId) return;
+    pendingDelivery.current = null;
+    setAwaitingAgent(false);
+    void sayRef
+      .current(
+        pending.text,
+        pending.skillInstructions,
+        pending.attachments,
+        pending.documentIds,
+      )
+      .catch(() => undefined);
+  }, [activeAgentId, boundAgentId]);
 
   /**
    * Component buttons speak as user turns without forcing every transcript card to re-render.
@@ -792,11 +854,16 @@ export function ChannelChat({
     // the seed has no box to go back into — it was typed on a screen that has already navigated
     // away. The transcript keeps the seeded message and the notice under it says what happened.
     void sayRef
-      .current(typeof pending.content === "string" ? pending.content : "")
+      .current(
+        typeof pending.content === "string" ? pending.content : "",
+        [],
+        [],
+        seedDocumentIds,
+      )
       .catch(() => undefined);
 
     // Keep `seed` in state; transcriptMessages gives it up once the agent holds a user turn.
-  }, []);
+  }, [seedDocumentIds]);
 
   return (
     // Activity renderers resolve their agent through this SDK context. It must match useAgent's
@@ -808,6 +875,7 @@ export function ChannelChat({
       <ConversationProvider ask={askFromComponent}>
         <ConversationView
           agents={toAgentOptions(agentProfiles, channel.agentIds)}
+          documents={toDocumentOptions(knowledgeDocuments)}
           channelId={channel.id}
           /*
            * THE TURN, not the run. `say` waits for the runtime agent and the join before a run starts,
@@ -840,10 +908,6 @@ export function ChannelChat({
             </>
           }
           onSubmit={async (draft) => {
-            // `draft.agentId` carries the @mentioned coworker, but nothing routes on it yet: this
-            // channel is pinned to one `runtimeAgentId` for the life of its thread, so honouring a
-            // per-message mention is a change to that binding, not to the composer.
-            //
             // `commandIds` are the `/` chips that survived into the send, in the order they were
             // typed. Resolved against the same list the menu was built from, so a chip left over from
             // a skill that has since been revoked resolves to nothing rather than to a stale
@@ -857,7 +921,39 @@ export function ChannelChat({
                 Boolean(instruction),
               );
 
-            await say(draft.text, skillInstructions, draft.attachments);
+            const target =
+              channel.agentIds.length > 1
+                ? await roomTurnAgent({
+                    members: channel.agentIds,
+                    mentioned: draft.agentId ?? undefined,
+                    text: draft.text,
+                    route: (text, candidates) =>
+                      routeMessage(text, undefined, candidates),
+                  })
+                : activeAgentId;
+
+            if (target !== activeAgentId) {
+              pendingDelivery.current = {
+                attachments: draft.attachments,
+                skillInstructions,
+                text: draft.text,
+                documentIds: [...draft.documentIds],
+              };
+              setAwaitingAgent(true);
+              setBoundAgentId(null);
+              joinGate.current = new Promise<void>((resolve) => {
+                openJoinGate.current = resolve;
+              });
+              setActiveAgentId(target);
+              return;
+            }
+
+            await say(
+              draft.text,
+              skillInstructions,
+              draft.attachments,
+              draft.documentIds,
+            );
           }}
           /**
            * Stop through the core so the abort signal reaches frontend tools; `say` repairs any
@@ -873,7 +969,7 @@ export function ChannelChat({
            * middle of an answer: a second turn racing the first on one thread, with a fabricated
            * result stitched over a tool call that is still executing.
            */
-          pending={agent.isRunning || turnsInFlight > 0}
+          pending={agent.isRunning || turnsInFlight > 0 || awaitingAgent}
           /*
            * A channel outlives its turns, so it is the screen where waiting is worth offering. A
            * correction typed mid-answer is held here, in this tab, and runs as one follow-up turn the

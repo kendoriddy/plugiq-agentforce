@@ -14,6 +14,7 @@ import {
   COMPUTER_GUIDANCE,
   PROVENANCE_GUIDANCE,
 } from "../../shared/bot-prompt";
+import { parseKnowledgeDocumentIds } from "../../shared/knowledge-documents";
 import { sanitizeSeededHistory } from "./agents/history-sanitize";
 import type { AgentActor } from "./agents/profile-types";
 import type { AuditInitiator } from "./audit";
@@ -26,6 +27,7 @@ import {
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
+import { learningContainerIdForRun } from "./learning-container";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -433,6 +435,11 @@ export async function buildAgents(
    * `loadAttachment` for the positional reason it gives. Absent means nothing is recorded.
    */
   markAttachmentsSent?: MarkAttachmentsSent,
+  /**
+   * How `#`-attached company documents are expanded for the model. Appended last. Absent means
+   * markers stay unexpanded.
+   */
+  loadKnowledgeDocuments?: LoadKnowledgeDocuments,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -489,6 +496,7 @@ export async function buildAgents(
           initiator,
           loadAttachment,
           markAttachmentsSent,
+          loadKnowledgeDocuments,
         ),
       ]),
     ),
@@ -574,6 +582,78 @@ export type MarkAttachmentsSent = (
    */
   threadId: string,
 ) => Promise<void>;
+
+/**
+ * Company documents attached via `#` on a turn, loaded when a system marker names them.
+ *
+ * A closure rather than rows held at build time: which documents a turn names is decided by the
+ * message, and a request is earlier than a message. Any signed-in user may read the library, so
+ * this is not narrowed by actor the way attachments are — it still travels per-request so the
+ * store stays out of the runtime module.
+ */
+export type LoadKnowledgeDocuments = (
+  ids: readonly string[],
+) => Promise<
+  readonly { id: string; title: string; category: string; body: string }[]
+>;
+
+/**
+ * Replace `[[openbot-knowledge-documents:…]]` system markers with title + body for the model.
+ *
+ * The browser keeps the marker (and shows chips, not bodies). Only the run input is expanded.
+ * Missing ids become a short note rather than failing the turn — a deleted document should not
+ * strand a conversation the way a missing attachment on the asked message does.
+ */
+export async function expandKnowledgeDocuments(
+  messages: Message[],
+  load: LoadKnowledgeDocuments,
+): Promise<Message[]> {
+  const expanded = [...messages];
+  for (let index = 0; index < expanded.length; index++) {
+    const message = expanded[index];
+    if (message.role !== "system" || typeof message.content !== "string") {
+      continue;
+    }
+    const ids = parseKnowledgeDocumentIds(message.content);
+    if (!ids || ids.length === 0) continue;
+    const docs = await load(ids);
+    const byId = new Map(docs.map((doc) => [doc.id, doc]));
+    const parts = ids.map((id) => {
+      const doc = byId.get(id);
+      if (!doc) {
+        return `Attached company document ${id} was not found.`;
+      }
+      return `Attached company document: ${doc.title} (${doc.category})\n\n${doc.body}`;
+    });
+    expanded[index] = {
+      ...message,
+      content: parts.join("\n\n---\n\n"),
+    } as Message;
+  }
+  return expanded;
+}
+
+/**
+ * Attachments then knowledge markers — the two ways a turn carries material the model must see.
+ */
+async function prepareMessagesForModel(
+  messages: Message[],
+  threadId: string,
+  loadAttachment?: LoadAttachment,
+  markAttachmentsSent?: MarkAttachmentsSent,
+  loadKnowledgeDocuments?: LoadKnowledgeDocuments,
+): Promise<Message[]> {
+  const withFiles = loadAttachment
+    ? await inlineAttachments(
+        messages,
+        loadAttachment,
+        threadId,
+        markAttachmentsSent,
+      )
+    : messages;
+  if (!loadKnowledgeDocuments) return withFiles;
+  return expandKnowledgeDocuments(withFiles, loadKnowledgeDocuments);
+}
 
 /**
  * The same history with every attached file put in front of the model.
@@ -747,6 +827,8 @@ async function buildAgent(
   loadAttachment?: LoadAttachment,
   /** How this run records that those files were sent. See {@link buildAgents}. */
   markAttachmentsSent?: MarkAttachmentsSent,
+  /** How `#`-attached documents are expanded. See {@link buildAgents}. */
+  loadKnowledgeDocuments?: LoadKnowledgeDocuments,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -854,6 +936,7 @@ async function buildAgent(
       narrowing ? offeredFor : undefined,
       loadAttachment,
       markAttachmentsSent,
+      loadKnowledgeDocuments,
     );
   }
 
@@ -875,6 +958,7 @@ async function buildAgent(
       ),
       loadAttachment,
       markAttachmentsSent,
+      loadKnowledgeDocuments,
     );
 
   const whole = withTools(granted);
@@ -1123,6 +1207,8 @@ function remoteAgentWithStandingRole(
   loadAttachment?: LoadAttachment,
   /** How this run records that those files were sent. See {@link buildAgents}. */
   markAttachmentsSent?: MarkAttachmentsSent,
+  /** How `#`-attached documents are expanded. See {@link buildAgents}. */
+  loadKnowledgeDocuments?: LoadKnowledgeDocuments,
 ) {
   /*
    * What this Bot holds, as a second standing message.
@@ -1218,18 +1304,17 @@ function remoteAgentWithStandingRole(
      * never received.
      *
      * ALONGSIDE THE SANITISER, NOT INSTEAD OF IT. One drops what the provider is going to refuse;
-     * this puts in front of the model what the person actually attached.
+     * this puts in front of the model what the person actually attached — files and `#` documents.
      */
     return from(
-      loadAttachment
-        ? inlineAttachments(
-            history,
-            loadAttachment,
-            // The conversation this run is in, which is what decides whose files it may reach.
-            input.threadId,
-            markAttachmentsSent,
-          )
-        : Promise.resolve(history),
+      prepareMessagesForModel(
+        history,
+        // The conversation this run is in, which is what decides whose files it may reach.
+        input.threadId,
+        loadAttachment,
+        markAttachmentsSent,
+        loadKnowledgeDocuments,
+      ),
     ).pipe(
       switchMap((messages) =>
         next.run({
@@ -1443,16 +1528,22 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
    * of THIS class, and a seam lost in a clone is a seam that never runs.
    */
   private readonly markAttachmentsSent: MarkAttachmentsSent | undefined;
+  /**
+   * How `#`-attached company documents are expanded for the model. Held for the same clone reason.
+   */
+  private readonly loadKnowledgeDocuments: LoadKnowledgeDocuments | undefined;
 
   constructor(
     configuration: BuiltInAgentConfiguration,
     loadAttachment?: LoadAttachment,
     markAttachmentsSent?: MarkAttachmentsSent,
+    loadKnowledgeDocuments?: LoadKnowledgeDocuments,
   ) {
     super(configuration);
     this.configuration = configuration;
     this.loadAttachment = loadAttachment;
     this.markAttachmentsSent = markAttachmentsSent;
+    this.loadKnowledgeDocuments = loadKnowledgeDocuments;
   }
 
   run(input: RunAgentInput): Observable<BaseEvent> {
@@ -1460,7 +1551,6 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
       (input.resume ?? []).map((entry) => entry.interruptId),
     );
     const history = sanitizeSeededHistory(input.messages, answeredByResume);
-    const load = this.loadAttachment;
     /*
      * ALONGSIDE THE GUARD ABOVE, NOT INSTEAD OF IT. One drops a conversation the model provider is
      * going to refuse; this replaces the stored reference a person's attachment arrives as with the
@@ -1468,9 +1558,11 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
      * between and a `/api/attachments/<id>` URL is not something a model provider will go and fetch.
      *
      * Nothing to load means nothing to inline, and the run goes up exactly as it did before any of
-     * this existed.
+     * this existed — unless `#` documents need expanding.
      */
-    if (!load) return super.run({ ...input, messages: history });
+    if (!this.loadAttachment && !this.loadKnowledgeDocuments) {
+      return super.run({ ...input, messages: history });
+    }
     /*
      * Deferred, because `run` has to answer with a stream straight away and reading the bytes is a
      * database round trip. `defer` puts that read on the subscription, which is where the run
@@ -1478,12 +1570,13 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
      */
     return defer(() =>
       from(
-        inlineAttachments(
+        prepareMessagesForModel(
           history,
-          load,
           // As above: the run's own conversation, not the actor's channels at large.
           input.threadId,
+          this.loadAttachment,
           this.markAttachmentsSent,
+          this.loadKnowledgeDocuments,
         ),
       ).pipe(switchMap((messages) => super.run({ ...input, messages }))),
     );
@@ -1504,6 +1597,7 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
       this.configuration,
       this.loadAttachment,
       this.markAttachmentsSent,
+      this.loadKnowledgeDocuments,
     );
     type WithMiddlewares = { middlewares: unknown[] };
     (cloned as unknown as WithMiddlewares).middlewares = [
@@ -1679,6 +1773,11 @@ export async function resolveRuntimeAgents(
    * same positional reason. Absent means nothing is recorded.
    */
   markAttachmentsSent?: MarkAttachmentsSent,
+  /**
+   * How `#`-attached company documents are expanded. Appended last. Absent means markers stay
+   * unexpanded.
+   */
+  loadKnowledgeDocuments?: LoadKnowledgeDocuments,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -1713,6 +1812,7 @@ export async function resolveRuntimeAgents(
     initiator,
     loadAttachment,
     markAttachmentsSent,
+    loadKnowledgeDocuments,
   );
 }
 
@@ -1816,6 +1916,13 @@ export function createRequestAgents(
    * nothing is recorded.
    */
   markAttachmentsSentForActor?: (actorId: string) => MarkAttachmentsSent,
+  /**
+   * How `#`-attached company documents are expanded, resolved for whoever is asking.
+   * Appended last. Absent means markers stay unexpanded.
+   */
+  loadKnowledgeDocumentsForActor?: (
+    actorId: string,
+  ) => LoadKnowledgeDocuments,
 ) {
   return async ({ request }: { request: Request }) => {
     const actor = await identifyActor(request);
@@ -1839,6 +1946,7 @@ export function createRequestAgents(
       undefined,
       loadAttachmentForActor?.(actor.id),
       markAttachmentsSentForActor?.(actor.id),
+      loadKnowledgeDocumentsForActor?.(actor.id),
     );
   };
 }
@@ -1990,6 +2098,13 @@ export function mountCopilotRuntime(
    * write is scoped to rows that person uploaded. Appended last. Absent means nothing is recorded.
    */
   markAttachmentsSentForActor?: (actorId: string) => MarkAttachmentsSent,
+  /**
+   * How `#`-attached company documents are expanded, resolved per person, on both paths below.
+   * Appended last. Absent means markers stay unexpanded.
+   */
+  loadKnowledgeDocumentsForActor?: (
+    actorId: string,
+  ) => LoadKnowledgeDocuments,
 ) {
   const { intelligence } = config.runtime;
 
@@ -2037,6 +2152,7 @@ export function mountCopilotRuntime(
       input.initiator,
       loadAttachmentForActor?.(actor.id),
       markAttachmentsSentForActor?.(actor.id),
+      loadKnowledgeDocumentsForActor?.(actor.id),
     );
     return agents[input.botId] ?? null;
   };
@@ -2049,6 +2165,7 @@ export function mountCopilotRuntime(
     apiUrl: intelligence.apiUrl,
     wsUrl: intelligence.gatewayWsUrl,
     apiKey: intelligence.apiKey,
+    getLearningContainerId: learningContainerIdForRun,
   });
 
   const runtime = new CopilotRuntime({
@@ -2112,6 +2229,7 @@ export function mountCopilotRuntime(
       loadInstructionsForActor,
       loadAttachmentForActor,
       markAttachmentsSentForActor,
+      loadKnowledgeDocumentsForActor,
     ) as never,
   });
 

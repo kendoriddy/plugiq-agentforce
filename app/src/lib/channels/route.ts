@@ -24,10 +24,15 @@ export type RoutingDecision = {
 export async function routeMessage(
   text: string,
   agentId?: string,
+  candidates?: readonly string[],
 ): Promise<RoutingDecision> {
   const response = await client("/api/route", {
     method: "POST",
-    body: agentId ? { text, agentId } : { text },
+    body: {
+      text,
+      ...(agentId ? { agentId } : {}),
+      ...(candidates ? { candidates } : {}),
+    },
     fallback: "Could not choose a coworker.",
   });
   return (await response.json()) as RoutingDecision;

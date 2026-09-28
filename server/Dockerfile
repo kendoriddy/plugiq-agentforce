@@ -19,6 +19,8 @@ COPY bunfig.toml bunfig.toml
 COPY app/package.json app/package.json
 COPY server/package.json server/package.json
 COPY worker/package.json worker/package.json
+COPY product-engineer-loop/package.json product-engineer-loop/package.json
+COPY product-engineer-loop/dist product-engineer-loop/dist
 RUN bun install --frozen-lockfile
 
 
@@ -49,6 +51,7 @@ COPY --from=deps /app/node_modules node_modules
 COPY --from=deps /app/package.json package.json
 COPY --from=deps /app/bun.lock bun.lock
 COPY --from=deps /app/server/node_modules server/node_modules
+COPY --from=deps /app/product-engineer-loop product-engineer-loop
 
 COPY server server
 COPY shared shared

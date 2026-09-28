@@ -108,6 +108,7 @@ export function createRoutingRoutes(
     const body = (await context.req.json().catch(() => null)) as {
       text?: unknown;
       agentId?: unknown;
+      candidates?: unknown;
     } | null;
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!text) return context.json({ error: "A message is required." }, 400);
@@ -115,13 +116,34 @@ export function createRoutingRoutes(
       typeof body?.agentId === "string" && body.agentId.trim()
         ? body.agentId.trim()
         : null;
+    const requested = parseCandidates(body?.candidates);
+    if (requested && !requested.ok) {
+      return context.json({ error: requested.error }, 400);
+    }
+    const limitedTo = requested?.ok ? requested.ids : null;
 
     const actor = context.var.actor;
-    const roster = await store.list(actor, false);
-    // The same default the composer shows: the package-picked harness, then the first public coworker.
-    const preferred = defaultRoutingProfile(roster);
+    const visible = await store.list(actor, false);
+    /*
+     * A room asks among its members, in the order the person put them in.
+     *
+     * The first of those is the fallback, not the deployment default: an untagged message in a
+     * room of specialists should stay in the room, on the coworker listed first, rather than
+     * jumping to whoever the home composer would have picked.
+     */
+    const roster = limitedTo
+      ? limitedTo.flatMap((id) => {
+          const profile = visible.find((agent) => agent.id === id);
+          return profile ? [profile] : [];
+        })
+      : visible;
+    const preferred = limitedTo ? roster[0] : defaultRoutingProfile(roster);
     if (!preferred) {
       return context.json({ error: "No coworker is available." }, 409);
+    }
+
+    if (named && limitedTo && !limitedTo.includes(named)) {
+      return context.json({ error: "That coworker is not in this room." }, 404);
     }
 
     /*
@@ -211,4 +233,24 @@ export function createRoutingRoutes(
   });
 
   return routes;
+}
+
+function parseCandidates(
+  value: unknown,
+): { ok: true; ids: string[] } | { ok: false; error: string } | null {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length === 0) {
+    return { ok: false, error: "Candidates must be a non-empty array." };
+  }
+  const ids: string[] = [];
+  for (const id of value) {
+    if (typeof id !== "string" || id.trim().length === 0) {
+      return { ok: false, error: "Candidates must be non-empty strings." };
+    }
+    ids.push(id.trim());
+  }
+  if (new Set(ids).size !== ids.length) {
+    return { ok: false, error: "Candidates must be unique." };
+  }
+  return { ok: true, ids };
 }

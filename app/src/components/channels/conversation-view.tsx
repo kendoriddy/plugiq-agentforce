@@ -13,6 +13,7 @@ import {
   type CommandOption,
   Composer,
   type ComposerDraft,
+  type DocumentOption,
   type DroppedAttachments,
   type QueueAction,
   type QueuedMessage,
@@ -26,6 +27,7 @@ export function ConversationView({
   busy = false,
   notice,
   agents = [],
+  documents = [],
   commands,
   channelId,
   disabled = false,
@@ -40,57 +42,19 @@ export function ConversationView({
 }: {
   messages: readonly Message[];
   busy?: boolean;
-  /** Shown above the composer. An error, or why this conversation is read-only. */
   notice?: ReactNode;
   agents?: readonly AgentOption[];
-  /**
-   * The `/` menu for this Bot's granted skills, supplied by the route that owns grant loading.
-   */
+  documents?: readonly DocumentOption[];
   commands?: readonly CommandOption[];
-  /**
-   * The channel this conversation belongs to, forwarded to the composer so it can upload
-   * attachments to it. Omitted by a caller with no channel yet — `/channel/new` creates one on
-   * first send — which leaves the composer exactly as it behaved before attachments existed.
-   */
   channelId?: string;
   disabled?: boolean;
-  /**
-   * A turn is in flight: the Bot has been asked something and has not come back yet.
-   *
-   * It has to mean the TURN and not the run underneath it. A turn that uses the browser is several
-   * runs in a row with the agent reporting itself idle between them, and a caller that passes its
-   * agent's run status straight through will tell this component the conversation is free in the
-   * middle of an answer. `queueWhileBusy` is the part that cannot survive that, because the queue
-   * drains on this falling.
-   */
   pending?: boolean;
-  /** Focus the composer the moment it can take a caret; forwarded to the composer. */
   autoFocus?: boolean;
-  /** Why the last turn ended without an answer. Drawn at the end of the transcript, not here. */
   stopped?: string;
-  /**
-   * There is a run for Stop to abort, which is a narrower fact than `pending` and is the honest one
-   * to draw a Stop button from. Defaults to `pending` for a caller with no gap between the two.
-   */
   stoppable?: boolean;
-  /**
-   * Let somebody type at a Bot that is already working, and run what they typed when it finishes.
-   *
-   * Off by default, and asked for rather than assumed, because it is only true of a conversation
-   * that will still be here when the turn ends. The compose screen creates the channel on send and
-   * navigates away; a message parked there would go down with the unmount, and a message that
-   * silently disappears is a worse answer than a send button that will not go.
-   *
-   * The other place somebody talks to a Bot, the direct `/bot` chat, does not get this either, and
-   * not by a decision made here: that screen draws CopilotKit's own chat rather than this composer,
-   * so there is nothing on it for this flag to reach. Giving it the same affordance means either
-   * moving it onto this composer or asking for it upstream, and neither is a queue.
-   */
   queueWhileBusy?: boolean;
-  /** History has been asked for and has not arrived. Drawn as placeholder rows; see `ChatTranscript`. */
   restoring?: boolean;
   onSubmit: (draft: ComposerDraft) => void | Promise<void>;
-  /** Stop the Bot mid-answer; forwarded to turn the send button into a stop button. */
   onStop?: () => void;
 }) {
   /*
@@ -436,6 +400,7 @@ export function ConversationView({
         {notice}
         <Composer
           agents={agents}
+          documents={documents}
           autoFocus={autoFocus}
           {...(channelId ? { channelId } : {})}
           {...(commands ? { commands } : {})}

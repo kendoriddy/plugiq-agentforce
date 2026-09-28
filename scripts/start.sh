@@ -354,7 +354,23 @@ else
 fi
 
 info "3/4  Runtime health"
-INFO="$(curl -fsS --max-time 8 "http://localhost:$SERVER_PORT/api/copilotkit/info")"
+#
+# Polled, not asked once. The server answers /info as soon as it is listening, but the runtime
+# resolves entitlement with the Intelligence service asynchronously after that, so for the first
+# seconds of a fresh start `licenseStatus` is legitimately "unknown" on a deployment whose key is
+# perfectly good. Asking once raced that window and reported a bad key, which sent people off
+# reissuing a credential that was never the problem.
+#
+# "unknown" is therefore treated as "not yet", and only a verdict that survives the window is
+# reported. A genuinely rejected key stays non-valid for the whole wait and still fails below.
+INFO=""
+for _ in $(seq 1 20); do
+  INFO="$(curl -fsS --max-time 8 "http://localhost:$SERVER_PORT/api/copilotkit/info" || true)"
+  case "$INFO" in
+    *'"licenseStatus":"valid"'*) break ;;
+  esac
+  sleep 1
+done
 python3 - "$INFO" <<'PY'
 import json, sys
 info = json.loads(sys.argv[1])

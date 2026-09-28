@@ -40,10 +40,14 @@ export function useStartChannel() {
   const navigate = useNavigate();
   const createChannel = useMutation(createChannelMutationOptions(queryClient));
 
-  const start = async (agentId: string, text: string) => {
+  const start = async (
+    agentId: string,
+    text: string,
+    documentIds: readonly string[] = [],
+  ) => {
     const channel = await createChannel.mutateAsync([agentId]);
     queryClient.setQueryData(channelKeys.detail(channel.id), channel);
-    stashFirstMessage(channel.id, text);
+    stashFirstMessage(channel.id, text, documentIds);
     await navigate({
       params: { channelId: channel.id },
       replace: true,
@@ -55,7 +59,16 @@ export function useStartChannel() {
     pending: createChannel.isPending,
     start,
     /** `start`, for a coworker the person chose: the choice is recorded first. */
-    startChosen: (agentId: string, text: string) =>
-      startWithChosen({ agentId, text, record: routeMessage, start }),
+    startChosen: (
+      agentId: string,
+      text: string,
+      documentIds: readonly string[] = [],
+    ) =>
+      startWithChosen({
+        agentId,
+        text,
+        record: routeMessage,
+        start: (id, message) => start(id, message, documentIds),
+      }),
   };
 }

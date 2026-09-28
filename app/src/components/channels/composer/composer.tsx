@@ -53,7 +53,7 @@ import { screenPickedFiles } from "./picked-files";
 import { AttachmentStrip } from "./attachment-strip";
 import { type RejectedFile, RejectedFiles } from "./rejected-files";
 import { PLACEHOLDER_COMMANDS } from "./sources";
-import { type AgentOption, buildTriggers } from "./triggers";
+import { type AgentOption, buildTriggers, type DocumentOption } from "./triggers";
 
 /**
  * The SDK's upload failure, derived rather than imported for the reason `attachments.ts` records
@@ -126,6 +126,8 @@ export type ComposerProps = {
   compact?: boolean;
   /** Agents that `@` can address. Empty means the mention menu reports an empty channel. */
   agents?: readonly AgentOption[];
+  /** Company documents that `#` can attach. */
+  documents?: readonly DocumentOption[];
   commands?: readonly CommandOption[];
   /**
    * Receives the whole draft rather than a string, so a mention or a command reaches the caller as
@@ -312,6 +314,7 @@ export function Composer({
   editorClassName,
   compact = false,
   agents = [],
+  documents = [],
   commands = PLACEHOLDER_COMMANDS,
   onSubmit,
   onQueue,
@@ -1010,8 +1013,8 @@ export function Composer({
 
   const isBusy = pending || isSubmitting;
   const triggers = useMemo(
-    () => buildTriggers({ agents, commands }),
-    [agents, commands],
+    () => buildTriggers({ agents, commands, documents }),
+    [agents, commands, documents],
   );
   const draft = useMemo(() => toDraft(value, staged), [staged, value]);
 

@@ -1,4 +1,5 @@
 import * as builtinDemoKnowledge from "./builtin-demo-knowledge";
+import * as builtinProductEngineer from "./builtin-product-engineer";
 import * as builtinRoutines from "./builtin-routines";
 import * as composio from "./composio";
 import * as driveRest from "./google-drive-rest";
@@ -121,6 +122,7 @@ export type TransportKind =
   | "google-drive-rest"
   | "builtin-demo-knowledge"
   | "builtin-routines"
+  | "builtin-product-engineer"
   | "composio";
 
 /**
@@ -147,6 +149,7 @@ const TRANSPORTS: Record<TransportKind, VendorTransport> = {
   "google-drive-rest": driveRest,
   "builtin-demo-knowledge": builtinDemoKnowledge,
   "builtin-routines": builtinRoutines,
+  "builtin-product-engineer": builtinProductEngineer,
   composio,
 };
 

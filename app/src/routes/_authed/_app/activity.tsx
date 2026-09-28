@@ -114,7 +114,7 @@ function ActivityPage() {
       </div>
 
       <p className="mt-5 text-sm text-muted-foreground">
-        This summary is backed by OpenBot's audit trail.{" "}
+        This summary is backed by the deployment's own audit trail.{" "}
         <Link
           className="font-medium text-foreground underline"
           to="/admin/audit"

@@ -74,6 +74,7 @@ import {
   runtimeModelForEnvironment,
   type ToolSelection,
 } from "./copilot";
+import { learningContainerIdForRun } from "./learning-container";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -94,6 +95,10 @@ import { grantedSkills, grantedTools, REFUSAL_MARKER } from "./plugins/tools";
 import { createTurnRunner } from "./routines/run-turn";
 import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
+import { createProductEngineerStore } from "./product-engineer/store";
+import { createKnowledgeDocumentStore } from "./documents/store";
+import { SEED_KNOWLEDGE_DOCUMENTS } from "./documents/seed";
+import { useKnowledgeDocuments } from "./plugins/builtin-demo-knowledge";
 import { createIntentRouter } from "./routing/classify";
 import { createModelCompleter } from "./routing/model";
 import {
@@ -384,12 +389,39 @@ if (tenantPackage.tenantId === "plugiq-agentforce") {
     key: "agentforce-knowledge",
     by: seededBy,
   });
-  await pluginStore.grant(
-    "mcp",
-    "agentforce-knowledge/search_knowledge",
-    "knowledge",
-    seededBy,
-  );
+  /*
+   * Every package Bot can search company documents. Knowledge Agent is the specialist, but a
+   * coworker asked "how many people in Engineering?" should not have to refuse because only one
+   * profile held the tool.
+   */
+  const knowledgeRef = "agentforce-knowledge/search_knowledge";
+  const packageAgentIds = tenantPackage.agents
+    .map((agent) => agent.id)
+    .filter((id) => !tenantPackage.omittedAgentIds.includes(id));
+  for (const agentId of packageAgentIds) {
+    await pluginStore.grant("mcp", knowledgeRef, agentId, seededBy);
+  }
+  if (config.productEngineer) {
+    await pluginStore.addServer({
+      key: "product-engineer",
+      by: seededBy,
+    });
+    const toolRefs = [
+      "product-engineer/start_product_engineer_run",
+      "product-engineer/list_product_engineer_runs",
+      "product-engineer/get_product_engineer_run",
+      "product-engineer/sync_product_engineer_run",
+      "product-engineer/approve_product_engineer_plan",
+      "product-engineer/reject_product_engineer_plan",
+      "product-engineer/resume_product_engineer_run",
+      "product-engineer/approve_product_engineer_run",
+    ];
+    for (const agentId of packageAgentIds) {
+      for (const ref of toolRefs) {
+        await pluginStore.grant("mcp", ref, agentId, seededBy);
+      }
+    }
+  }
 }
 
 /**
@@ -405,6 +437,12 @@ if (tenantPackage.tenantId === "plugiq-agentforce") {
 const routineStore = createRoutineStore(database);
 useRoutineTools(routineStore);
 
+const knowledgeDocumentStore = createKnowledgeDocumentStore(database);
+useKnowledgeDocuments(knowledgeDocumentStore);
+if (tenantPackage.tenantId === "plugiq-agentforce") {
+  await knowledgeDocumentStore.seedIfEmpty([...SEED_KNOWLEDGE_DOCUMENTS]);
+}
+
 /**
  * Where a Bot handing work to another gets decided.
  *
@@ -418,14 +456,28 @@ const handoffDesk = createHandoffDesk({
   profiles: agentProfileStore,
   // Read per hop and never held, so revoking a grant applies to the next hop rather than after a
   // restart.
-  mayAddress: async (fromBotId, toBotId) =>
-    (
+  mayAddress: async (fromBotId, toBotId, threadId) => {
+    const granted = (
       await pluginStore
         .botsReachableFrom(fromBotId)
         // A grant that cannot be read is not a grant. Failing closed here costs a hop; failing open
         // would let a Bot address one nobody gave it because the database blinked.
         .catch(() => [] as string[])
-    ).includes(toBotId),
+    ).includes(toBotId);
+    if (granted) return true;
+    /*
+     * Room-mates are reachable without an administrator grant.
+     *
+     * Only the other members of the channel this run is in, and only while the asking Bot is one
+     * of them. A thread that is not a channel — or a Bot that is not in it — adds nobody, so a
+     * hop cannot use a room as a way around the grant list.
+     */
+    if (!threadId || fromBotId === toBotId) return false;
+    const room = await channelStore
+      .agentIdsForThread(threadId)
+      .catch(() => [] as string[]);
+    return room.includes(fromBotId) && room.includes(toBotId);
+  },
   /*
    * Deferred rather than passed directly, because `actorFor` is defined further down with the rest
    * of the run-building collaborators. It is only ever called during a hop, long after this module
@@ -670,6 +722,16 @@ const markAttachmentsSentForActor =
   (actorId: string) => (ids: readonly string[], threadId: string) =>
     markAttachmentsSent(database, { actorId, threadId }, ids);
 
+/**
+ * Company documents attached with `#`, expanded when a turn carries their marker.
+ *
+ * Any signed-in user may read the library (same rule as `/api/documents`). Bound per actor only so
+ * the request and routine paths share one seam shape with attachments.
+ */
+const loadKnowledgeDocumentsForActor =
+  (_actorId: string) => (ids: readonly string[]) =>
+    knowledgeDocumentStore.getMany(ids);
+
 /*
  * What the deployment tells a remote Bot about the run it is starting.
  *
@@ -833,6 +895,7 @@ const buildAgentFor = async ({
     // And the same recorder, so the files on a routine's own message stop counting as staged the
     // moment it sends them, exactly as a person's do.
     markAttachmentsSentForActor(actor.id),
+    loadKnowledgeDocumentsForActor(actor.id),
   );
   const agent = agents[agentId];
   if (!agent) {
@@ -871,6 +934,7 @@ const routineIntelligence = new CopilotKitIntelligence({
   apiUrl: config.runtime.intelligence.apiUrl,
   wsUrl: config.runtime.intelligence.gatewayWsUrl,
   apiKey: config.runtime.intelligence.apiKey,
+  getLearningContainerId: learningContainerIdForRun,
 });
 const routineAgentRunner = new IntelligenceAgentRunner({
   url: routineIntelligence.ɵgetRunnerWsUrl(),
@@ -948,6 +1012,16 @@ const copilotRuntime = mountCopilotRuntime(
       config.handoff.maxPerRun > 0 &&
       run.depth < config.handoff.maxDepth;
 
+    const granted = couldHandOn
+      ? await pluginStore.botsReachableFrom(botId).catch(() => [] as string[])
+      : [];
+    const room = couldHandOn
+      ? await channelStore
+          .agentIdsForThread(input.threadId)
+          .catch(() => [] as string[])
+      : [];
+    const roomMates = room.filter((id) => id !== botId && room.includes(botId));
+
     const passing = couldHandOn
       ? handoffTool({
           desk: handoffDesk,
@@ -962,13 +1036,9 @@ const copilotRuntime = mountCopilotRuntime(
            */
           from: run,
           // Read now rather than at boot, so a grant made a minute ago counts and one revoked a
-          // minute ago stops counting.
-          hasSomebodyToAsk:
-            (
-              await pluginStore
-                .botsReachableFrom(botId)
-                .catch(() => [] as string[])
-            ).length > 0,
+          // minute ago stops counting. Room-mates count too, without a grant, and only for this
+          // thread.
+          hasSomebodyToAsk: granted.length > 0 || roomMates.length > 0,
           maxDepth: config.handoff.maxDepth,
           maxPerRun: config.handoff.maxPerRun,
         })
@@ -1001,6 +1071,7 @@ const copilotRuntime = mountCopilotRuntime(
   // And that those files went out in a send, written by the person who sent them and only for rows
   // they uploaded. See markAttachmentsSentForActor.
   markAttachmentsSentForActor,
+  loadKnowledgeDocumentsForActor,
 );
 
 /**
@@ -1314,6 +1385,8 @@ const app = createApp(
   // Absent without a key, which leaves the routes reporting no broker rather than listing apps
   // nobody could connect.
   composio ? { broker: composio.broker } : undefined,
+  config.productEngineer ? createProductEngineerStore(database) : undefined,
+  knowledgeDocumentStore,
 );
 
 /**

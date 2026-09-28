@@ -1,6 +1,7 @@
 import {
   IconActivity,
   IconBolt,
+  IconCode,
   IconFileText,
   IconHome,
   IconLogout,
@@ -58,6 +59,7 @@ import {
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { relativeTime } from "@/lib/relative-time";
+import { NewRoomButton } from "../channels/room-controls";
 import { Button } from "../ui/button";
 import { Channel } from "./channel";
 
@@ -265,6 +267,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 { to: "/agents", label: "Agents", icon: IconRobot },
                 { to: "/documents", label: "Documents", icon: IconFileText },
                 {
+                  to: "/product-engineer",
+                  label: "Product Engineer",
+                  icon: IconCode,
+                },
+                {
                   to: "/integrations",
                   label: "Integrations",
                   icon: IconPlugConnected,
@@ -332,14 +339,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/45">
               Recent work
             </span>
-            <Button
-              className="size-7 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              size="icon"
-              variant="ghost"
-              render={(props) => <Link {...props} to="/channel/new" />}
-            >
-              <IconPlus />
-            </Button>
+            <span className="flex items-center gap-0.5">
+              <NewRoomButton />
+              <Button
+                aria-label="New chat"
+                className="size-7 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                size="icon"
+                variant="ghost"
+                render={(props) => <Link {...props} to="/channel/new" />}
+              >
+                <IconPlus />
+              </Button>
+            </span>
           </div>
           <SidebarMenu>
             <SidebarMenuItem>

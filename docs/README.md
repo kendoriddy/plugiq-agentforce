@@ -15,5 +15,6 @@ Start with the root [README](../README.md), then use these references:
 - [Kubernetes](../charts/openbot/README.md): the Helm chart, what a cluster needs before it, and the values that differ per cloud.
 - [Releasing](releasing.md): how a release is proposed, reviewed and published.
 - [Windows desktop signing](windows-signing.md): protected Azure Key Vault signing and verification of the app and NSIS installer.
+- [Product Engineer boundary](product-engineer-boundary.md): coding factory lives outside this repo (Linear → Cursor cloud → PR loop).
 
 Do not include credential values, customer data, transcripts, or local-only notes in public docs.

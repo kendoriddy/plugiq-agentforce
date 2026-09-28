@@ -20,7 +20,6 @@ import type { AgentActor, AgentProfile } from "../agents/profile-types";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
-import { parsePageLimit } from "../paging";
 import {
   agentProfiles,
   channelAgents,
@@ -28,6 +27,7 @@ import {
   channels,
   intelligenceChannelMappings,
 } from "../db/schema";
+import { parsePageLimit } from "../paging";
 import {
   CHANNEL_ACTIVITY_TOPIC,
   type ChannelActivityEvent,
@@ -160,7 +160,43 @@ const ROSTER_ORDER = [
 type ChannelTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export type ChannelStore = {
-  create(actor: AgentActor, agentIds: string[]): Promise<AgentChannel>;
+  /**
+   * Start a channel. `name` is the person's own label for a room; omitted, the name is still
+   * generated from the coworkers, which is what a one-agent chat has always used.
+   */
+  create(
+    actor: AgentActor,
+    agentIds: string[],
+    options?: { name?: string },
+  ): Promise<AgentChannel>;
+  /**
+   * Add a coworker to a channel this person is already in.
+   *
+   * Adding one who is already there is the channel as it stands, not an error: a double click
+   * should not fail the second time. A channel the package owns is configuration, so its roster
+   * is not writable here.
+   */
+  addAgent(
+    actor: AgentActor,
+    channelId: string,
+    agentId: string,
+  ): Promise<AgentChannel>;
+  /**
+   * Remove a coworker. The last one stays: a channel with nobody in it has nothing to talk to.
+   * The caller must already be a member; a stranger and a missing channel are the same refusal.
+   */
+  removeAgent(
+    actor: AgentActor,
+    channelId: string,
+    agentId: string,
+  ): Promise<AgentChannel>;
+  /**
+   * The coworkers on the channel a thread belongs to, or none when the thread is not a channel.
+   *
+   * Used by a hop, which knows the thread and not the channel. A scratch thread — a handoff that
+   * was never a room — resolves to nothing, so it cannot become a way to address the roster.
+   */
+  agentIdsForThread(threadId: string): Promise<string[]>;
   /**
    * The one conversation this person has with this Bot alone, made if they have not had one yet.
    *
@@ -229,9 +265,12 @@ function previewOf(text: string) {
 }
 
 function channelName(names: string[]) {
-  const joined = names.join(", ");
-  const codePoints = Array.from(joined);
-  if (codePoints.length <= MAX_CHANNEL_NAME_CODE_POINTS) return joined;
+  return clipChannelName(names.join(", "));
+}
+
+function clipChannelName(name: string) {
+  const codePoints = Array.from(name);
+  if (codePoints.length <= MAX_CHANNEL_NAME_CODE_POINTS) return name;
   return `${codePoints.slice(0, MAX_CHANNEL_NAME_CODE_POINTS - 1).join("")}…`;
 }
 
@@ -253,6 +292,7 @@ export function createChannelStore(
     transaction: ChannelTransaction,
     actor: AgentActor,
     agentIds: string[],
+    requestedName?: string,
   ): Promise<AgentChannel> => {
     // Validated on this transaction, not through `profileStore.get`: the read has to share
     // the connection this transaction already holds, and has to hold the profile so an agent
@@ -272,13 +312,15 @@ export function createChannelStore(
     // in a project that may hold more than one. See thread-identity.ts.
     const threadId = threadIdentity.mint();
     // Named from the caller's ordering, which is the order the channel presents its agents in.
-    const name = channelName(
+    const generated = channelName(
       agentIds.map((agentId) => {
         const profile = profilesById.get(agentId);
         if (!profile) throw new AgentNotFoundError(agentId);
         return profile.name;
       }),
     );
+    const trimmed = requestedName?.trim();
+    const name = trimmed ? clipChannelName(trimmed) : generated;
 
     await transaction.insert(channels).values({
       id,
@@ -302,9 +344,10 @@ export function createChannelStore(
   };
 
   const store: ChannelStore = {
-    create(actor, agentIds) {
+    create(actor, agentIds, options) {
       return database.transaction(
-        async (transaction) => makeChannel(transaction, actor, agentIds),
+        async (transaction) =>
+          makeChannel(transaction, actor, agentIds, options?.name),
         { isolationLevel: "read committed" },
       );
     },
@@ -854,7 +897,95 @@ export function createChannelStore(
         sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify(event)})`,
       );
     },
+
+    async addAgent(actor, channelId, agentId) {
+      await database.transaction(async (transaction) => {
+        await requireWritableChannel(transaction, actor, channelId);
+        const profile = await profileStore.getWithin(
+          transaction,
+          actor,
+          agentId,
+        );
+        if (!profile) throw new AgentNotFoundError(agentId);
+        await transaction
+          .insert(channelAgents)
+          .values({ channelId, agentId })
+          .onConflictDoNothing();
+      });
+      const channel = await store.get(actor, channelId);
+      if (!channel) throw new ChannelNotFoundError(channelId);
+      return channel;
+    },
+
+    async removeAgent(actor, channelId, agentId) {
+      await database.transaction(async (transaction) => {
+        await requireWritableChannel(transaction, actor, channelId);
+        const members = await transaction
+          .select({ agentId: channelAgents.agentId })
+          .from(channelAgents)
+          .where(eq(channelAgents.channelId, channelId));
+        if (!members.some((member) => member.agentId === agentId)) {
+          throw new AgentNotFoundError(agentId);
+        }
+        if (members.length <= 1) throw new ChannelLastAgentError(channelId);
+        await transaction
+          .delete(channelAgents)
+          .where(
+            and(
+              eq(channelAgents.channelId, channelId),
+              eq(channelAgents.agentId, agentId),
+            ),
+          );
+      });
+      const channel = await store.get(actor, channelId);
+      if (!channel) throw new ChannelNotFoundError(channelId);
+      return channel;
+    },
+
+    async agentIdsForThread(threadId) {
+      const rows = await database
+        .select({ agentId: channelAgents.agentId })
+        .from(intelligenceChannelMappings)
+        .innerJoin(
+          channels,
+          and(
+            eq(channels.id, intelligenceChannelMappings.channelId),
+            isNull(channels.deletedAt),
+          ),
+        )
+        .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
+        .where(eq(intelligenceChannelMappings.threadId, threadId));
+      return [...new Set(rows.map((row) => row.agentId))];
+    },
   };
+
+  /**
+   * The caller is a member of a channel they may change, or this throws.
+   *
+   * A missing channel, a deleted one, and a stranger are the same refusal, so belonging is not
+   * something an outsider can probe for. A channel the package defines is configuration: its
+   * roster is written by the sync that owns it, not by a member.
+   */
+  async function requireWritableChannel(
+    transaction: ChannelTransaction,
+    actor: AgentActor,
+    channelId: string,
+  ) {
+    const [row] = await transaction
+      .select({ packageId: channels.packageId })
+      .from(channels)
+      .innerJoin(
+        channelMemberships,
+        and(
+          eq(channelMemberships.channelId, channels.id),
+          eq(channelMemberships.userId, actor.id),
+        ),
+      )
+      .where(and(eq(channels.id, channelId), isNull(channels.deletedAt)));
+    if (!row) throw new ChannelNotFoundError(channelId);
+    if (row.packageId !== null) throw new ChannelRosterLockedError(channelId);
+  }
+
   return store;
 }
 
@@ -872,11 +1003,25 @@ export class ChannelPackageOwnedError extends Error {
   }
 }
 
+export class ChannelLastAgentError extends Error {
+  constructor(id: string) {
+    super(`Channel ${id} must keep at least one coworker.`);
+    this.name = "ChannelLastAgentError";
+  }
+}
+
+export class ChannelRosterLockedError extends Error {
+  constructor(id: string) {
+    super(`Channel ${id} is defined by the deployment package.`);
+    this.name = "ChannelRosterLockedError";
+  }
+}
+
 type ChannelInputParseResult =
-  | { ok: true; value: { agentIds: string[] } }
+  | { ok: true; value: { agentIds: string[]; name?: string } }
   | { ok: false; error: string };
 
-type ChannelInputObject = { agentIds?: unknown };
+type ChannelInputObject = { agentIds?: unknown; name?: unknown };
 
 export function parseChannelInput(input: unknown): ChannelInputParseResult {
   if (!isChannelInputObject(input)) {
@@ -897,6 +1042,16 @@ export function parseChannelInput(input: unknown): ChannelInputParseResult {
 
   if (new Set(agentIds).size !== agentIds.length) {
     return { ok: false, error: "Agent IDs must be unique." };
+  }
+
+  if (input.name !== undefined) {
+    if (typeof input.name !== "string" || input.name.trim().length === 0) {
+      return { ok: false, error: "Name must be a non-empty string." };
+    }
+    return {
+      ok: true,
+      value: { agentIds: agentIds.sort(), name: input.name.trim() },
+    };
   }
 
   return { ok: true, value: { agentIds: agentIds.sort() } };
@@ -1055,6 +1210,7 @@ export function createChannelRoutes(
       const channel = await store.create(
         context.var.actor,
         parsed.value.agentIds,
+        parsed.value.name ? { name: parsed.value.name } : undefined,
       );
       return context.json({ channel: channelDto(channel) }, 201);
     } catch (error) {
@@ -1165,6 +1321,44 @@ export function createChannelRoutes(
     }
   });
 
+  routes.post("/:channelId/agents", requireUser, async (context) => {
+    const body = (await context.req.json().catch(() => null)) as {
+      agentId?: unknown;
+    } | null;
+    const agentId =
+      typeof body?.agentId === "string" ? body.agentId.trim() : "";
+    if (!agentId) {
+      return context.json({ error: "Agent ID is required." }, 400);
+    }
+    try {
+      const channel = await store.addAgent(
+        context.var.actor,
+        context.req.param("channelId"),
+        agentId,
+      );
+      return context.json({ channel: channelDto(channel) });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  routes.delete("/:channelId/agents/:agentId", requireUser, async (context) => {
+    const agentId = context.req.param("agentId").trim();
+    if (!agentId) {
+      return context.json({ error: "Agent ID is required." }, 400);
+    }
+    try {
+      const channel = await store.removeAgent(
+        context.var.actor,
+        context.req.param("channelId"),
+        agentId,
+      );
+      return context.json({ channel: channelDto(channel) });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
   routes.delete("/:channelId", requireUser, async (context) => {
     const channelId = context.req.param("channelId");
     try {
@@ -1237,6 +1431,21 @@ function mapStoreError(context: Context, error: unknown): Response {
         error:
           "This channel is defined by the deployment package, so it cannot be deleted here.",
       },
+      409,
+    );
+  }
+  if (error instanceof ChannelRosterLockedError) {
+    return context.json(
+      {
+        error:
+          "This channel is defined by the deployment package, so its coworkers cannot be changed here.",
+      },
+      409,
+    );
+  }
+  if (error instanceof ChannelLastAgentError) {
+    return context.json(
+      { error: "A channel has to keep at least one coworker." },
       409,
     );
   }

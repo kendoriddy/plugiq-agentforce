@@ -13,16 +13,60 @@ import { type AgentChannel, type ChannelPage, channelKeys } from "./queries";
  */
 export function createChannelMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
-    mutationFn: async (agentIds: string[]): Promise<AgentChannel> => {
+    mutationFn: async (
+      input: string[] | { agentIds: string[]; name?: string },
+    ): Promise<AgentChannel> => {
+      const agentIds = Array.isArray(input) ? input : input.agentIds;
+      const name = Array.isArray(input) ? undefined : input.name?.trim();
       const response = await client("/api/channels", {
         method: "POST",
-        body: { agentIds },
+        body: name ? { agentIds, name } : { agentIds },
         fallback: "Could not start a channel",
       });
       return ((await response.json()) as { channel: AgentChannel }).channel;
     },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: channelKeys.all }),
+  });
+}
+
+function rememberChannel(queryClient: QueryClient, channel: AgentChannel) {
+  queryClient.setQueryData(channelKeys.detail(channel.id), channel);
+  void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+}
+
+/** Add a coworker to a channel this person is already in. */
+export function addChannelAgentMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (variables: { channelId: string; agentId: string }) => {
+      const response = await client(
+        `/api/channels/${variables.channelId}/agents`,
+        {
+          method: "POST",
+          body: { agentId: variables.agentId },
+          fallback: "Could not add this coworker",
+        },
+      );
+      return ((await response.json()) as { channel: AgentChannel }).channel;
+    },
+    onSuccess: (channel) => rememberChannel(queryClient, channel),
+  });
+}
+
+/** Remove a coworker. The server refuses to remove the last one. */
+export function removeChannelAgentMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (variables: { channelId: string; agentId: string }) => {
+      const response = await client(
+        `/api/channels/${variables.channelId}/agents/${encodeURIComponent(variables.agentId)}`,
+        {
+          method: "DELETE",
+          fallback: "Could not remove this coworker",
+        },
+      );
+      return ((await response.json()) as { channel: AgentChannel }).channel;
+    },
+    onSuccess: (channel) => rememberChannel(queryClient, channel),
   });
 }
 

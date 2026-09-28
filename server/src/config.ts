@@ -145,11 +145,28 @@ export type HandoffCaps = {
   maxPerRun: number;
 };
 
+/**
+ * Cursor cloud Product Engineer dispatch (Linear → implement → PR → resume).
+ * Absent when keys/repos are not set; routes stay unmounted.
+ */
+export type ProductEngineerConfig = {
+  cursorApiKey: string;
+  linearApiKey: string;
+  repos: string[];
+  startingRef: string | undefined;
+  model: string;
+};
+
 export type DeploymentConfig = {
   /** The port the API listens on. Named `PORT` or `SERVER_PORT`; see `serverPort`. */
   port: number;
   databaseUrl: string;
   keyEncryptionKey: string;
+  /**
+   * Optional Product Engineer loop: Cursor cloud coding from Linear tickets.
+   * Unset leaves `/api/product-engineer` unmounted.
+   */
+  productEngineer?: ProductEngineerConfig;
   /**
    * Authentication for the bundled Bot and/or the installed picked harness.
    *
@@ -1005,6 +1022,34 @@ function serverPort(environment: Environment): number {
   return port ?? serverPort ?? DEFAULT_PORT;
 }
 
+/**
+ * Product Engineer cloud dispatch. All three of CURSOR_API_KEY, LINEAR_API_KEY, and PE_REPOS
+ * must be set; otherwise the feature stays off and routes are not mounted.
+ */
+function productEngineerConfig(
+  environment: Environment,
+): ProductEngineerConfig | undefined {
+  const cursorApiKey = optional(environment, "CURSOR_API_KEY");
+  const linearApiKey = optional(environment, "LINEAR_API_KEY");
+  const reposRaw = optional(environment, "PE_REPOS");
+  if (!cursorApiKey || !linearApiKey || !reposRaw) return undefined;
+
+  const repos = reposRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (repos.length === 0) return undefined;
+
+  const rawRef = optional(environment, "PE_STARTING_REF");
+  return {
+    cursorApiKey,
+    linearApiKey,
+    repos,
+    startingRef: rawRef && rawRef.length > 0 ? rawRef : undefined,
+    model: optional(environment, "PE_MODEL") ?? "composer-2.5",
+  };
+}
+
 export function loadConfig(
   environment: Environment = process.env,
 ): DeploymentConfig {
@@ -1012,12 +1057,14 @@ export function loadConfig(
   const auth = authConfig(environment, google);
   const managedAgent = managedAgentConfig(environment);
   const workerSharedSecret = optional(environment, "WORKER_SHARED_SECRET");
+  const productEngineer = productEngineerConfig(environment);
 
   return {
     port: serverPort(environment),
     databaseUrl: required(environment, "DATABASE_URL"),
     keyEncryptionKey: keyEncryptionKey(environment),
     ...(managedAgent ? { managedAgent } : {}),
+    ...(productEngineer ? { productEngineer } : {}),
     agentEndpointAllowedHosts: agentEndpointAllowedHosts(environment),
     deploymentId: optional(environment, "DEPLOYMENT_ID"),
     composioApiKey: optional(environment, "COMPOSIO_API_KEY"),

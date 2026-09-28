@@ -50,6 +50,8 @@ COPY tsconfig.base.json bunfig.toml ./
 COPY app/package.json app/package.json
 COPY server/package.json server/package.json
 COPY worker/package.json worker/package.json
+COPY product-engineer-loop/package.json product-engineer-loop/package.json
+COPY product-engineer-loop/dist product-engineer-loop/dist
 RUN bun install --frozen-lockfile
 
 # The lockfile travels with the manifest, because `--frozen-lockfile` with no lockfile in the context
@@ -63,10 +65,12 @@ RUN cd agent-computer && bun install --frozen-lockfile
 # A second tree with the build-time dependencies left out, for the runtime stage to take. Vite,
 # biome and the test tooling are a gigabyte that nothing in a running container imports.
 RUN mkdir -p /prod && cp package.json bun.lock /prod/ \
-  && cd /prod && mkdir -p app server worker \
+  && cd /prod && mkdir -p app server worker product-engineer-loop \
   && cp /src/app/package.json app/package.json \
   && cp /src/server/package.json server/package.json \
   && cp /src/worker/package.json worker/package.json \
+  && cp /src/product-engineer-loop/package.json product-engineer-loop/package.json \
+  && cp -R /src/product-engineer-loop/dist product-engineer-loop/dist \
   && bun install --frozen-lockfile --production
 
 

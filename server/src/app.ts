@@ -71,6 +71,12 @@ import {
   InstructionsTooLongError,
   type UserInstructionsStore,
 } from "./user-instructions";
+import { createProductEngineerRoutes } from "./product-engineer/routes";
+import { createProductEngineerRunner } from "./product-engineer/runner";
+import type { ProductEngineerStore } from "./product-engineer/store";
+import { useProductEngineerTools } from "./plugins/builtin-product-engineer";
+import { createDocumentRoutes } from "./documents/routes";
+import type { KnowledgeDocumentStore } from "./documents/store";
 
 /**
  * How much of a multipart body is boundary, headers and other fields rather than file.
@@ -309,6 +315,13 @@ export function createApp(
    * no app directory to offer, rather than one that lists apps nobody can connect.
    */
   composio?: { broker: ComposioBroker },
+  /**
+   * Postgres-backed Product Engineer runs. Mounted only when both this store and
+   * `config.productEngineer` are present (API keys + PE_REPOS).
+   */
+  productEngineerStore?: ProductEngineerStore,
+  /** Company knowledge documents for the Documents page and chat attach. */
+  knowledgeDocumentStore?: KnowledgeDocumentStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -1436,6 +1449,31 @@ export function createApp(
           createIntelligenceClient(config.runtime.intelligence),
         ),
       ),
+    );
+  }
+
+  if (productEngineerStore && config.productEngineer) {
+    const runner = createProductEngineerRunner(
+      productEngineerStore,
+      config.productEngineer,
+    );
+    useProductEngineerTools({ runner, store: productEngineerStore });
+    app.route(
+      "/api/product-engineer",
+      createProductEngineerRoutes(
+        productEngineerStore,
+        runner,
+        requireUser,
+      ),
+    );
+  } else {
+    useProductEngineerTools(null);
+  }
+
+  if (knowledgeDocumentStore) {
+    app.route(
+      "/api/documents",
+      createDocumentRoutes(knowledgeDocumentStore, requireUser),
     );
   }
 

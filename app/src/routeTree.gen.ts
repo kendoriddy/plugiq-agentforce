@@ -22,6 +22,7 @@ import { Route as AuthedAppDocumentsRouteImport } from './routes/_authed/_app/do
 import { Route as AuthedAppIntegrationsRouteImport } from './routes/_authed/_app/integrations'
 import { Route as AuthedAppMembersRouteImport } from './routes/_authed/_app/members'
 import { Route as AuthedAppModelsRouteImport } from './routes/_authed/_app/models'
+import { Route as AuthedAppProductEngineerRouteImport } from './routes/_authed/_app/product-engineer'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
@@ -112,6 +113,12 @@ const AuthedAppModelsRoute = AuthedAppModelsRouteImport.update({
   path: '/models',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppProductEngineerRoute =
+  AuthedAppProductEngineerRouteImport.update({
+    id: '/product-engineer',
+    path: '/product-engineer',
+    getParentRoute: () => AuthedAppRoute,
+  } as any)
 const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
   id: '/routines',
   path: '/routines',
@@ -266,6 +273,7 @@ export interface FileRoutesByFullPath {
   '/integrations': typeof AuthedAppIntegrationsRoute
   '/members': typeof AuthedAppMembersRoute
   '/models': typeof AuthedAppModelsRoute
+  '/product-engineer': typeof AuthedAppProductEngineerRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -303,6 +311,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof AuthedAppIntegrationsRoute
   '/members': typeof AuthedAppMembersRoute
   '/models': typeof AuthedAppModelsRoute
+  '/product-engineer': typeof AuthedAppProductEngineerRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -344,6 +353,7 @@ export interface FileRoutesById {
   '/_authed/_app/integrations': typeof AuthedAppIntegrationsRoute
   '/_authed/_app/members': typeof AuthedAppMembersRoute
   '/_authed/_app/models': typeof AuthedAppModelsRoute
+  '/_authed/_app/product-engineer': typeof AuthedAppProductEngineerRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -386,6 +396,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/members'
     | '/models'
+    | '/product-engineer'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -423,6 +434,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/members'
     | '/models'
+    | '/product-engineer'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -463,6 +475,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/integrations'
     | '/_authed/_app/members'
     | '/_authed/_app/models'
+    | '/_authed/_app/product-engineer'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/admin/audit'
@@ -588,6 +601,13 @@ declare module '@tanstack/react-router' {
       path: '/models'
       fullPath: '/models'
       preLoaderRoute: typeof AuthedAppModelsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/product-engineer': {
+      id: '/_authed/_app/product-engineer'
+      path: '/product-engineer'
+      fullPath: '/product-engineer'
+      preLoaderRoute: typeof AuthedAppProductEngineerRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/routines': {
@@ -846,6 +866,7 @@ interface AuthedAppRouteChildren {
   AuthedAppIntegrationsRoute: typeof AuthedAppIntegrationsRoute
   AuthedAppMembersRoute: typeof AuthedAppMembersRoute
   AuthedAppModelsRoute: typeof AuthedAppModelsRoute
+  AuthedAppProductEngineerRoute: typeof AuthedAppProductEngineerRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
@@ -861,6 +882,7 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppIntegrationsRoute: AuthedAppIntegrationsRoute,
   AuthedAppMembersRoute: AuthedAppMembersRoute,
   AuthedAppModelsRoute: AuthedAppModelsRoute,
+  AuthedAppProductEngineerRoute: AuthedAppProductEngineerRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,
